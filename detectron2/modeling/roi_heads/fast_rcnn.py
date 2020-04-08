@@ -300,7 +300,7 @@ class FastRCNNOutputs(object):
         x1, y1, x2, y2 = self.bbox_transform(output, self.box2box_transform.weights)
         x1g, y1g, x2g, y2g = self.bbox_transform(target, self.box2box_transform.weights)
 
-        breakpoint()
+        # breakpoint()
 
         x2 = torch.max(x1, x2)
         y2 = torch.max(y1, y2)
