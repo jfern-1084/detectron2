@@ -300,6 +300,8 @@ class FastRCNNOutputs(object):
         x1, y1, x2, y2 = self.bbox_transform(output, self.box2box_transform.weights)
         x1g, y1g, x2g, y2g = self.bbox_transform(target, self.box2box_transform.weights)
 
+        breakpoint()
+
         x2 = torch.max(x1, x2)
         y2 = torch.max(y1, y2)
 
@@ -341,8 +343,6 @@ class FastRCNNOutputs(object):
             1
         )
 
-        # breakpoint()
-
         iouk = (1 - iouk[fg_inds]).sum() / self.gt_classes.numel()
 
         diouk = (1 - diouk[fg_inds]).sum() / self.gt_classes.numel()
@@ -367,8 +367,10 @@ class FastRCNNOutputs(object):
         #
         # loss_box_reg = loss_box_reg / self.gt_classes.numel()
 
+        # breakpoint()
+
         #Returning only Diouk
-        return diouk
+        return diouk * 12.
 
 ##----------- Added by Johan on 1/3/2020 ------------------------------------------------------
 ##----------- End of code ---------------------------------------------------------------------
