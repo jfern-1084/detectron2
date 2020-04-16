@@ -305,6 +305,14 @@ _C.MODEL.ROI_BOX_HEAD.CLS_AGNOSTIC_BBOX_REG = False
 # If true, RoI heads use bounding boxes predicted by the box head rather than proposal boxes.
 _C.MODEL.ROI_BOX_HEAD.TRAIN_ON_PRED_BOXES = False
 
+#Loss Box weight for IOU loss functions
+#Default is 1 for L1 and 12 for IOU functions
+_C.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT = 1
+
+#Choices between losses for box heads
+#Default is sl1, others are diou and ciou
+_C.MODEL.ROI_BOX_HEAD.LOSS = "sl1"
+
 # ---------------------------------------------------------------------------- #
 # Cascaded Box Head
 # ---------------------------------------------------------------------------- #

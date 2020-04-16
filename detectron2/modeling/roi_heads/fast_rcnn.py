@@ -5,7 +5,7 @@ from fvcore.nn import smooth_l1_loss
 from torch import nn
 from torch.nn import functional as F
 
-from detectron2.config import configurable
+from detectron2.config import configurable, global_cfg
 from detectron2.layers import Linear, ShapeSpec, batched_nms, cat
 from detectron2.modeling.box_regression import Box2BoxTransform
 from detectron2.structures import Boxes, Instances
@@ -182,6 +182,10 @@ class FastRCNNOutputs(object):
                 self.gt_classes = cat([p.gt_classes for p in proposals], dim=0)
         else:
             self.proposals = Boxes(torch.zeros(0, 4, device=self.pred_proposal_deltas.device))
+
+        #Get global configuration. Will work on improving this later
+        self.cfg = global_cfg
+
         self._no_instances = len(proposals) == 0  # no instances found
 
     def _log_accuracy(self):
@@ -327,8 +331,6 @@ class FastRCNNOutputs(object):
         x1, y1, x2, y2 = self.bbox_transform(output, self.box2box_transform.weights)
         x1g, y1g, x2g, y2g = self.bbox_transform(target, self.box2box_transform.weights)
 
-        # breakpoint()
-
         x2 = torch.max(x1, x2)
         y2 = torch.max(y1, y2)
 
@@ -366,6 +368,8 @@ class FastRCNNOutputs(object):
 
         bg_class_ind = self.pred_class_logits.shape[1] - 1
 
+        breakpoint()
+
         fg_inds = torch.nonzero((self.gt_classes >= 0) & (self.gt_classes < bg_class_ind)).squeeze(
             1
         )
@@ -374,30 +378,8 @@ class FastRCNNOutputs(object):
 
         diouk = (1 - diouk[fg_inds]).sum() / self.gt_classes.numel()
 
-        # if cls_agnostic_bbox_reg:
-        #     # pred_proposal_deltas only corresponds to foreground class for agnostic
-        #     gt_class_cols = torch.arange(box_dim, device=device)
-        # else:
-        #     fg_gt_classes = self.gt_classes[fg_inds]
-        #     # pred_proposal_deltas for class k are located in columns [b * k : b * k + b],
-        #     # where b is the dimension of box representation (4 or 5)
-        #     # Note that compared to Detectron1,
-        #     # we do not perform bounding box regression for background classes.
-        #     gt_class_cols = box_dim * fg_gt_classes[:, None] + torch.arange(box_dim, device=device)
-        #
-        # loss_box_reg = smooth_l1_loss(
-        #     self.pred_proposal_deltas[fg_inds[:, None], gt_class_cols],
-        #     target[fg_inds],
-        #     self.smooth_l1_beta,
-        #     reduction="sum",
-        # )
-        #
-        # loss_box_reg = loss_box_reg / self.gt_classes.numel()
-
-        # breakpoint()
-
         #Returning only Diouk
-        return diouk * 12.
+        return diouk * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
 
 ##----------- Added by Johan on 1/3/2020 ------------------------------------------------------
 ##----------- End of code ---------------------------------------------------------------------
@@ -431,11 +413,27 @@ class FastRCNNOutputs(object):
         Returns:
             A dict of losses (scalar tensors) containing keys "loss_cls" and "loss_box_reg".
         """
-        return {
-            "loss_cls": self.softmax_cross_entropy_loss(),
-            # "loss_box_reg": self.smooth_l1_loss()
-            "loss_box_reg" : self.compute_diou()
+
+        losses_dict = {
+            "loss_cls": self.softmax_cross_entropy_loss()
         }
+
+        #Will need to improve the configuration part
+        reg_loss = self.cfg.MODEL.ROI_BOX_HEAD.LOSS
+
+        if reg_loss == "diou":
+            losses_dict["loss_box_reg"] = self.compute_diou()
+        elif reg_loss == "ciou":
+            losses_dict["loss_box_reg"] = self.compute_diou()
+        else:
+            losses_dict["loss_box_reg"] = self.smooth_l1_loss()
+
+        # return {
+        #     "loss_cls": self.softmax_cross_entropy_loss(),
+        #     "loss_box_reg": self.smooth_l1_loss()
+        # }
+
+        return losses_dict
 
     def predict_boxes(self):
         """
