@@ -149,8 +149,10 @@ class BaseMaskRCNNHead(nn.Module):
     """
 
     @configurable
-    def __init__(self, vis_period=0):
+    def __init__(self, *, vis_period=0):
         """
+        NOTE: this interface is experimental.
+
         Args:
             vis_period (int): visualization period
         """
@@ -197,8 +199,10 @@ class MaskRCNNConvUpsampleHead(BaseMaskRCNNHead):
     """
 
     @configurable
-    def __init__(self, input_shape: ShapeSpec, num_classes, conv_dims, conv_norm="", vis_period=0):
+    def __init__(self, input_shape: ShapeSpec, *, num_classes, conv_dims, conv_norm="", **kwargs):
         """
+        NOTE: this interface is experimental.
+
         Args:
             input_shape (ShapeSpec): shape of the input feature
             num_classes (int): the number of classes. 1 if using class agnostic prediction.
@@ -206,9 +210,8 @@ class MaskRCNNConvUpsampleHead(BaseMaskRCNNHead):
                 of N-1 conv layers and the last upsample layer.
             conv_norm (str or callable): normalization for the conv layers.
                 See :func:`detectron2.layers.get_norm` for supported types.
-            vis_period (int): visualization period. 0 to disable visualization.
         """
-        super().__init__(vis_period)
+        super().__init__(**kwargs)
         assert len(conv_dims) >= 1, "conv_dims have to be non-empty!"
 
         self.conv_norm_relus = []

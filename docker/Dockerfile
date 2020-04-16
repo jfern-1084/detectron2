@@ -2,8 +2,10 @@ FROM nvidia/cuda:10.1-cudnn7-devel
 
 ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update && apt-get install -y \
-	python3-opencv ca-certificates python3-dev git wget sudo && \
+	python3-opencv ca-certificates python3-dev git wget sudo  \
+	cmake protobuf-compiler libprotobuf-dev && \
   rm -rf /var/lib/apt/lists/*
+RUN ln -sv /usr/bin/python3 /usr/bin/python
 
 # create a non-root user
 ARG USER_ID=1000
@@ -35,7 +37,7 @@ RUN pip install --user -e detectron2_repo
 ENV FVCORE_CACHE="/tmp"
 WORKDIR /home/appuser/detectron2_repo
 
-# run it, for example:
+# run detectron2 under user "appuser":
 # wget http://images.cocodataset.org/val2017/000000439715.jpg -O input.jpg
 # python3 demo/demo.py  \
 	#--config-file configs/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml \
