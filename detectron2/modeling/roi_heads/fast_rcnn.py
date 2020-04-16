@@ -368,11 +368,9 @@ class FastRCNNOutputs(object):
 
         bg_class_ind = self.pred_class_logits.shape[1] - 1
 
-        breakpoint()
-
-        fg_inds = torch.nonzero((self.gt_classes >= 0) & (self.gt_classes < bg_class_ind)).squeeze(
-            1
-        )
+        fg_inds = torch.nonzero(
+            (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
+        )[0]
 
         iouk = (1 - iouk[fg_inds]).sum() / self.gt_classes.numel()
 
