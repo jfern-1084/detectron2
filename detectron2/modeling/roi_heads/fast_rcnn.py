@@ -215,6 +215,7 @@ class FastRCNNOutputs(object):
         Returns:
             scalar Tensor
         """
+
         if self._no_instances:
             return 0.0 * F.cross_entropy(
                 self.pred_class_logits,
@@ -232,7 +233,7 @@ class FastRCNNOutputs(object):
         Returns:
             scalar Tensor
         """
-        
+
         if self._no_instances:
             return 0.0 * smooth_l1_loss(
                 self.pred_proposal_deltas,
