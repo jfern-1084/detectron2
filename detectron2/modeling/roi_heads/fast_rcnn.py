@@ -1,6 +1,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 import logging
 import torch
+import math
 from fvcore.nn import smooth_l1_loss
 from torch import nn
 from torch.nn import functional as F
@@ -362,10 +363,6 @@ class FastRCNNOutputs(object):
         diouk = iouk - u
 
         # Borrowed from sl1
-        box_dim =target.size(1)  # 4 or 5
-        cls_agnostic_bbox_reg = self.pred_proposal_deltas.size(1) == box_dim
-        device = self.pred_proposal_deltas.device
-
         bg_class_ind = self.pred_class_logits.shape[1] - 1
 
         fg_inds = torch.nonzero(
@@ -378,6 +375,73 @@ class FastRCNNOutputs(object):
 
         #Returning only Diouk
         return diouk * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
+
+
+    def compute_ciou(self):
+
+        output = self.pred_proposal_deltas
+        target = self.box2box_transform.get_deltas(
+            self.proposals.tensor, self.gt_boxes.tensor
+        )
+
+        x1, y1, x2, y2 = self.bbox_transform(output, self.box2box_transform.weights)
+        x1g, y1g, x2g, y2g = self.bbox_transform(target, self.box2box_transform.weights)
+
+        x2 = torch.max(x1, x2)
+        y2 = torch.max(y1, y2)
+        w_pred = x2 - x1
+        h_pred = y2 - y1
+        w_gt = x2g - x1g
+        h_gt = y2g - y1g
+
+        x_center = (x2 + x1) / 2
+        y_center = (y2 + y1) / 2
+        x_center_g = (x1g + x2g) / 2
+        y_center_g = (y1g + y2g) / 2
+
+        xkis1 = torch.max(x1, x1g)
+        ykis1 = torch.max(y1, y1g)
+        xkis2 = torch.min(x2, x2g)
+        ykis2 = torch.min(y2, y2g)
+
+        xc1 = torch.min(x1, x1g)
+        yc1 = torch.min(y1, y1g)
+        xc2 = torch.max(x2, x2g)
+        yc2 = torch.max(y2, y2g)
+
+        intsctk = torch.zeros(x1.size()).to(output)
+        mask = (ykis2 > ykis1) * (xkis2 > xkis1)
+        intsctk[mask] = (xkis2[mask] - xkis1[mask]) * (ykis2[mask] - ykis1[mask])
+        unionk = (x2 - x1) * (y2 - y1) + (x2g - x1g) * (y2g - y1g) - intsctk + 1e-7
+        iouk = intsctk / unionk
+
+        c = ((xc2 - xc1) ** 2) + ((yc2 - yc1) ** 2) + 1e-7
+        d = ((x_center - x_center_g) ** 2) + ((y_center - y_center_g) ** 2)
+        u = d / c
+
+        with torch.no_grad():
+            arctan = torch.atan(w_gt / h_gt) - torch.atan(w_pred / h_pred)
+            v = (4 / (math.pi ** 2)) * torch.pow((torch.atan(w_gt / h_gt) - torch.atan(w_pred / h_pred)), 2)
+            S = 1 - iouk
+            alpha = v / (S + v)
+            w_temp = 2 * w_pred
+
+        ar = (8 / (math.pi ** 2)) * arctan * ((w_pred - w_temp) * h_pred)
+        ciouk = iouk - (u + alpha * ar)
+
+        bg_class_ind = self.pred_class_logits.shape[1] - 1
+
+        fg_inds = torch.nonzero(
+            (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
+        )[0]
+
+        iouk = (1 - iouk[fg_inds]).sum() / self.gt_classes.numel()
+        ciouk = (1 - ciouk[fg_inds]).sum() / self.gt_classes.numel()
+
+        breakpoint()
+
+
+        return ciouk * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
 
 ##----------- Added by Johan on 1/3/2020 ------------------------------------------------------
 ##----------- End of code ---------------------------------------------------------------------
@@ -422,7 +486,7 @@ class FastRCNNOutputs(object):
         if reg_loss == "diou":
             losses_dict["loss_box_reg"] = self.compute_diou()
         elif reg_loss == "ciou":
-            losses_dict["loss_box_reg"] = self.compute_diou()
+            losses_dict["loss_box_reg"] = self.compute_ciou()
         else:
             losses_dict["loss_box_reg"] = self.smooth_l1_loss()
 
