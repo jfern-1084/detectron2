@@ -438,8 +438,6 @@ class FastRCNNOutputs(object):
         iouk = (1 - iouk[fg_inds]).sum() / self.gt_classes.numel()
         ciouk = (1 - ciouk[fg_inds]).sum() / self.gt_classes.numel()
 
-        breakpoint()
-
 
         return ciouk * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
 
