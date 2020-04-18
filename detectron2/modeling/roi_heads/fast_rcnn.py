@@ -369,7 +369,8 @@ class FastRCNNOutputs(object):
             (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
         )[0]
 
-        iouk = (1 - iouk[fg_inds]).sum() / self.gt_classes.numel()
+        #Not needed. May be wasting computation
+        # iouk = (1 - iouk[fg_inds]).sum() / self.gt_classes.numel()
 
         diouk = (1 - diouk[fg_inds]).sum() / self.gt_classes.numel()
 
@@ -435,7 +436,9 @@ class FastRCNNOutputs(object):
             (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
         )[0]
 
-        iouk = (1 - iouk[fg_inds]).sum() / self.gt_classes.numel()
+        # Not needed. May be wasting computation
+        # iouk = (1 - iouk[fg_inds]).sum() / self.gt_classes.numel()
+
         ciouk = (1 - ciouk[fg_inds]).sum() / self.gt_classes.numel()
 
 
