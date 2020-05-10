@@ -315,7 +315,7 @@ class FastRCNNOutputs(object):
 
         return x1.view(-1), y1.view(-1), x2.view(-1), y2.view(-1)
 
-    def compute_diou(self):
+    def compute_diou_v1(self):
 
         output = self.pred_proposal_deltas
         target = self.box2box_transform.get_deltas(
@@ -370,7 +370,7 @@ class FastRCNNOutputs(object):
         #Returning only Diouk
         return diouk * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
 
-    def compute_diou_v1(self):
+    def compute_diou(self):
 
         output = self.pred_proposal_deltas
         target = self.box2box_transform.get_deltas(
