@@ -336,7 +336,7 @@ def convert_to_coco_dict(dataset_name):
                     polygons = PolygonMasks([segmentation])
                     area = polygons.area()[0].item()
                 elif isinstance(segmentation, dict):  # RLE
-                    area = mask_util.area(segmentation)
+                    area = mask_util.area(segmentation).item()
                 else:
                     raise TypeError(f"Unknown segmentation type {type(segmentation)}!")
             else:
@@ -364,7 +364,7 @@ def convert_to_coco_dict(dataset_name):
             coco_annotation["id"] = len(coco_annotations) + 1
             coco_annotation["image_id"] = coco_image["id"]
             coco_annotation["bbox"] = [round(float(x), 3) for x in bbox]
-            coco_annotation["area"] = area
+            coco_annotation["area"] = float(area)
             coco_annotation["iscrowd"] = annotation.get("iscrowd", 0)
             coco_annotation["category_id"] = reverse_id_mapper(annotation["category_id"])
 
@@ -375,6 +375,10 @@ def convert_to_coco_dict(dataset_name):
 
             if "segmentation" in annotation:
                 coco_annotation["segmentation"] = annotation["segmentation"]
+                if isinstance(coco_annotation["segmentation"], dict):  # RLE
+                    coco_annotation["segmentation"]["counts"] = coco_annotation["segmentation"][
+                        "counts"
+                    ].decode("ascii")
 
             coco_annotations.append(coco_annotation)
 
