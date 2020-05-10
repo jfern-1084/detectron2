@@ -315,7 +315,7 @@ class FastRCNNOutputs(object):
 
         return x1.view(-1), y1.view(-1), x2.view(-1), y2.view(-1)
 
-    def compute_diou_v1(self):
+    def compute_diou(self):
 
         output = self.pred_proposal_deltas
         target = self.box2box_transform.get_deltas(
@@ -370,7 +370,7 @@ class FastRCNNOutputs(object):
         #Returning only Diouk
         return diouk * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
 
-    def compute_diou(self):
+    def compute_diou_v1(self):
 
         output = self.pred_proposal_deltas
         target = self.box2box_transform.get_deltas(
@@ -412,9 +412,10 @@ class FastRCNNOutputs(object):
         yc2 = torch.max(y2, y2g)
 
         intsctk = torch.zeros(x1.size()).to(self.pred_proposal_deltas.device)
-        mask = (ykis2 > ykis1) * (xkis2 > xkis1)
+        # mask = (ykis2 > ykis1) * (xkis2 > xkis1)
 
-        intsctk[mask] = (xkis2[mask] - xkis1[mask]) * (ykis2[mask] - ykis1[mask])
+        # intsctk[mask] = (xkis2[mask] - xkis1[mask]) * (ykis2[mask] - ykis1[mask])
+        intsctk = (xkis2 - xkis1) * (ykis2 - ykis1)
         unionk = (x2 - x1) * (y2 - y1) + (x2g - x1g) * (y2g - y1g) - intsctk + 1e-7
         iouk = intsctk / unionk
 
