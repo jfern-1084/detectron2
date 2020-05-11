@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 from fvcore.nn import smooth_l1_loss
 
+from detectron2.config import global_cfg
 from detectron2.layers import batched_nms, cat
 from detectron2.structures import Boxes, Instances
 from detectron2.utils.events import get_event_storage
@@ -158,8 +159,77 @@ def find_top_rpn_proposals(
     return results
 
 
+#Added by Johan. Improved DIOU
+
+def bbox_transform(deltas, weights, scale_clamp):
+    wx, wy, ww, wh = weights
+    dx = deltas[:, 0::4] / wx
+    dy = deltas[:, 1::4] / wy
+    dw = deltas[:, 2::4] / ww
+    dh = deltas[:, 3::4] / wh
+
+    dw = torch.clamp(dw, max=scale_clamp)
+    dh = torch.clamp(dh, max=scale_clamp)
+
+    pred_ctr_x = dx
+    pred_ctr_y = dy
+    pred_w = torch.exp(dw)
+    pred_h = torch.exp(dh)
+
+    x1 = pred_ctr_x - 0.5 * pred_w
+    y1 = pred_ctr_y - 0.5 * pred_h
+    x2 = pred_ctr_x + 0.5 * pred_w
+    y2 = pred_ctr_y + 0.5 * pred_h
+
+    return x1.view(-1), y1.view(-1), x2.view(-1), y2.view(-1)
+
+def compute_diou(pos_masks,
+                 gt_anchor_deltas, pred_anchor_deltas, box2box_transform,
+                 batch_size, loss_weight):
+
+    output = pred_anchor_deltas
+    target = gt_anchor_deltas
+
+    output = output[pos_masks]
+    target = target[pos_masks]
+
+    x1, y1, x2, y2 = bbox_transform(output, box2box_transform.weights, box2box_transform.scale_clamp)
+    x1g, y1g, x2g, y2g = bbox_transform(target, box2box_transform.weights, box2box_transform.scale_clamp)
+
+    x2 = torch.max(x1, x2)
+    y2 = torch.max(y1, y2)
+
+    x_p = (x2 + x1) / 2
+    y_p = (y2 + y1) / 2
+    x_g = (x1g + x2g) / 2
+    y_g = (y1g + y2g) / 2
+
+    xkis1 = torch.max(x1, x1g)
+    ykis1 = torch.max(y1, y1g)
+    xkis2 = torch.min(x2, x2g)
+    ykis2 = torch.min(y2, y2g)
+
+    xc1 = torch.min(x1, x1g)
+    yc1 = torch.min(y1, y1g)
+    xc2 = torch.max(x2, x2g)
+    yc2 = torch.max(y2, y2g)
+
+    intsctk = (xkis2 - xkis1) * (ykis2 - ykis1)   #Optimized
+    unionk = (x2 - x1) * (y2 - y1) + (x2g - x1g) * (y2g - y1g) - intsctk + 1e-7
+    iouk = intsctk / unionk
+
+    c = ((xc2 - xc1) ** 2) + ((yc2 - yc1) ** 2) + 1e-7
+    d = ((x_p - x_g) ** 2) + ((y_p - y_g) ** 2)
+    u = d / c
+    diouk = iouk - u
+
+    diouk = ((1 - diouk).sum() / batch_size) * loss_weight
+
+    #Returning only Diouk
+    return diouk
+
 def rpn_losses(
-    gt_labels, gt_anchor_deltas, pred_objectness_logits, pred_anchor_deltas, smooth_l1_beta
+    gt_labels, gt_anchor_deltas, pred_objectness_logits, pred_anchor_deltas, smooth_l1_beta, cfg, box2box_transform
 ):
     """
     Args:
@@ -176,13 +246,28 @@ def rpn_losses(
             the smooth L1 loss function. When set to 0, the loss becomes L1. When
             set to +inf, the loss becomes constant 0.
 
+        #Added for DIOU implementation
+        cfg (configuration): Hacky way to get which loss to apply for bbox
+        box2box_transform: To get predetermined weights and scale_clamp
+
     Returns:
         objectness_loss, localization_loss, both unnormalized (summed over samples).
     """
     pos_masks = gt_labels == 1
-    localization_loss = smooth_l1_loss(
-        pred_anchor_deltas[pos_masks], gt_anchor_deltas[pos_masks], smooth_l1_beta, reduction="sum"
-    )
+
+    # Will need to improve the configuration part
+    reg_loss = cfg.MODEL.RPN_LOSS_TYPE
+    localization_loss = 0
+
+    if reg_loss == "diou":
+        localization_loss = compute_diou(
+            pos_masks, gt_anchor_deltas, pred_anchor_deltas, box2box_transform,
+            cfg.SOLVER.IMS_PER_BATCH, cfg.MODEL.RPN_LOSS_BBOX_WEIGHT
+        )
+    else:
+        localization_loss = smooth_l1_loss(
+            pred_anchor_deltas[pos_masks], gt_anchor_deltas[pos_masks], smooth_l1_beta, reduction="sum"
+        )
 
     valid_masks = gt_labels >= 0
     objectness_loss = F.binary_cross_entropy_with_logits(
@@ -255,6 +340,9 @@ class RPNOutputs(object):
         self.num_images = len(images)
         self.smooth_l1_beta = smooth_l1_beta
 
+        #Global Config
+        self.cfg = global_cfg
+
     def losses(self):
         """
         Return the losses from a set of RPN predictions and their associated ground-truth.
@@ -283,6 +371,8 @@ class RPNOutputs(object):
             cat(self.pred_objectness_logits, dim=1),
             cat(self.pred_anchor_deltas, dim=1),
             self.smooth_l1_beta,
+            self.cfg,
+            self.box2box_transform
         )
         normalizer = self.batch_size_per_image * self.num_images
         return {

@@ -234,6 +234,13 @@ _C.MODEL.RPN.POST_NMS_TOPK_TEST = 1000
 # NMS threshold used on RPN proposals
 _C.MODEL.RPN.NMS_THRESH = 0.7
 
+#RPN loss modication:
+#Type of BBOX loss for RPN. Default is sl1
+#Possible to change to diou
+_C.MODEL.RPN_LOSS_TYPE = "sl1"
+#Weight for BBOX loss
+_C.MODEL.RPN_LOSS_BBOX_WEIGHT = 1.
+
 # ---------------------------------------------------------------------------- #
 # ROI HEADS options
 # ---------------------------------------------------------------------------- #

@@ -377,7 +377,7 @@ class FastRCNNOutputs(object):
             self.proposals.tensor, self.gt_boxes.tensor
         )
 
-        # Borrowed from sl1
+        # Borrowed from sl1. Earlier verison used mask code
         bg_class_ind = self.pred_class_logits.shape[1] - 1
         box_dim = target.size(1)  # 4 or 5
 
@@ -411,11 +411,7 @@ class FastRCNNOutputs(object):
         xc2 = torch.max(x2, x2g)
         yc2 = torch.max(y2, y2g)
 
-        intsctk = torch.zeros(x1.size()).to(self.pred_proposal_deltas.device)
-        # mask = (ykis2 > ykis1) * (xkis2 > xkis1)
-
-        # intsctk[mask] = (xkis2[mask] - xkis1[mask]) * (ykis2[mask] - ykis1[mask])
-        intsctk = (xkis2 - xkis1) * (ykis2 - ykis1)
+        intsctk = (xkis2 - xkis1) * (ykis2 - ykis1)   #Optimized
         unionk = (x2 - x1) * (y2 - y1) + (x2g - x1g) * (y2g - y1g) - intsctk + 1e-7
         iouk = intsctk / unionk
 
@@ -424,13 +420,10 @@ class FastRCNNOutputs(object):
         u = d / c
         diouk = iouk - u
 
-        #Not needed. May be wasting computation
-        # iouk = (1 - iouk[fg_inds]).sum() / self.gt_classes.numel()
-
-        diouk = (1 - diouk).sum() / self.gt_classes.numel()
+        diouk = ((1 - diouk).sum() / self.gt_classes.numel()) * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
 
         #Returning only Diouk
-        return diouk * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
+        return diouk
 
     def compute_ciou(self):
 
