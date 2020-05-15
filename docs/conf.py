@@ -57,9 +57,6 @@ class GithubURLDomain(Domain):
             return []
 
 
-# The suffix(es) of source filenames.
-# You can specify multiple suffix as a list of string:
-#
 # to support markdown
 from recommonmark.parser import CommonMarkParser
 
@@ -80,6 +77,7 @@ except ImportError:
         "torchvision", "torchvision.ops",
     ]:
         sys.modules[m] = mock.Mock(name=m)
+    sys.modules['torch'].__version__ = "1.5"  # fake version
 
 for m in [
     "cv2", "scipy", "portalocker", "detectron2._C",
