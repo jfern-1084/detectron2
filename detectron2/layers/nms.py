@@ -32,7 +32,7 @@ def batched_soft_nms(boxes, scores, idxs):
     #Replace this code with cuda code once available
     assert boxes.shape[-1] == 4
 
-    dets = torch.cat((boxes, scores.view(-1, 1)), 1).numpy()
+    dets = torch.cat((boxes, scores.view(-1, 1)), 1).cpu().numpy()
     result_mask = scores.new_zeros(scores.size(), dtype=torch.bool)
     for id in torch.unique(idxs).cpu().tolist():
         mask = (idxs == id).nonzero().view(-1)
