@@ -36,7 +36,7 @@ def batched_soft_nms(boxes, scores, idxs):
     for id in torch.unique(idxs).cpu().tolist():
         mask = (idxs == id).nonzero().view(-1)
         dets = torch.cat((boxes[mask], scores[mask].view(-1, 1)), 1)
-        _, keep = torch.tensor( cython_nms.soft_nms(dets[mask].cpu().numpy()) )
+        _, keep = torch.tensor( cython_nms.soft_nms(dets.cpu().numpy()) )
         result_mask[mask[keep]] = True
     keep = result_mask.nonzero().view(-1)
     keep = keep[scores[keep].argsort(descending=True)]
