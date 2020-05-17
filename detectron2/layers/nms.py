@@ -28,6 +28,7 @@ def batched_nms(boxes, scores, idxs, iou_threshold):
     keep = keep[scores[keep].argsort(descending=True)]
     return keep
 
+#Work in progress!
 def batched_soft_nms(boxes, scores, idxs):
     #Added by Johan for experimenting with soft_nms
     #Replace this code with cuda code once available

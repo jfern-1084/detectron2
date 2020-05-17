@@ -116,8 +116,8 @@ def fast_rcnn_inference_single_image(
     scores = scores[filter_mask]
 
     # Apply per-class NMS
-    # keep = batched_nms(boxes, scores, filter_inds[:, 1], nms_thresh)
-    keep = batched_soft_nms(boxes, scores, filter_inds[:, 1])
+    keep = batched_nms(boxes, scores, filter_inds[:, 1], nms_thresh)
+    # keep = batched_soft_nms(boxes, scores, filter_inds[:, 1])
 
     if topk_per_image >= 0:
         keep = keep[:topk_per_image]
