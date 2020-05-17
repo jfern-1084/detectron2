@@ -10,7 +10,7 @@ from detectron2.layers import batched_nms, batched_nms_rotated, nms_rotated
 
 def nms_edit_distance(keep1, keep2):
     """
-    Compare the "keep" result of two nms call.
+    Compare the "keep" result of two caffe_nms call.
     They are allowed to be different in terms of edit distance
     due to floating point precision issues, e.g.,
     if a box happen to have an IoU of 0.5 with another box,
@@ -140,7 +140,7 @@ class TestNMSRotated(unittest.TestCase):
         rotated_boxes[:, 1] = (boxes[:, 1] + boxes[:, 3]) / 2.0
         # Note for rotated_boxes[:, 2] and rotated_boxes[:, 3]:
         # widths and heights are intentionally swapped here for 90 degrees case
-        # so that the reference horizontal nms could be used
+        # so that the reference horizontal caffe_nms could be used
         rotated_boxes[:, 2] = boxes[:, 3] - boxes[:, 1]
         rotated_boxes[:, 3] = boxes[:, 2] - boxes[:, 0]
 

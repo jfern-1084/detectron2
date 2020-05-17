@@ -705,7 +705,7 @@ class TensorMask(nn.Module):
         pred_boxes = self.box2box_transform.apply_deltas(
             pred_deltas[top_idxs], anchors[top_idxs].tensor
         )
-        # apply nms
+        # apply caffe_nms
         keep = batched_nms(pred_boxes, pred_prob, cls_idxs, self.nms_threshold)
         # pick the top ones
         keep = keep[: self.detections_im]

@@ -5,6 +5,8 @@ import torch
 from torchvision.ops import boxes as box_ops
 from torchvision.ops import nms  # BC-compat
 
+#NMS and Soft-NMS
+from detectron2.layers import cython_nms
 
 def batched_nms(boxes, scores, idxs, iou_threshold):
     """
@@ -20,6 +22,21 @@ def batched_nms(boxes, scores, idxs, iou_threshold):
     for id in torch.unique(idxs).cpu().tolist():
         mask = (idxs == id).nonzero().view(-1)
         keep = nms(boxes[mask], scores[mask], iou_threshold)
+        result_mask[mask[keep]] = True
+    keep = result_mask.nonzero().view(-1)
+    keep = keep[scores[keep].argsort(descending=True)]
+    return keep
+
+def batched_soft_nms(boxes, scores, idxs):
+    #Added by Johan for experimenting with soft_nms
+    #Replace this code with cuda code once available
+    assert boxes.shape[-1] == 4
+
+    dets = torch.cat((boxes, scores.view(-1, 1)), 1).numpy()
+    result_mask = scores.new_zeros(scores.size(), dtype=torch.bool)
+    for id in torch.unique(idxs).cpu().tolist():
+        mask = (idxs == id).nonzero().view(-1)
+        _, keep = cython_nms.soft_nms(dets[mask])
         result_mask[mask[keep]] = True
     keep = result_mask.nonzero().view(-1)
     keep = keep[scores[keep].argsort(descending=True)]

@@ -48,7 +48,7 @@ _IGNORED_OPS = [
     "aten::sub",
     "aten::upsample_nearest2d",
     "prim::PythonOp",
-    "torchvision::nms",
+    "torchvision::caffe_nms",
 ]
 
 
