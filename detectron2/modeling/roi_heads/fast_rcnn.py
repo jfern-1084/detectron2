@@ -378,19 +378,6 @@ class FastRCNNOutputs(object):
             self.proposals.tensor, self.gt_boxes.tensor
         )
 
-        # Borrowed from sl1. Earlier verison used mask code
-        bg_class_ind = self.pred_class_logits.shape[1] - 1
-        box_dim = target.size(1)  # 4 or 5
-
-        fg_inds = torch.nonzero(
-            (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
-        )[0]
-
-        gt_class_cols = torch.arange(box_dim, device=self.pred_proposal_deltas.device)
-
-        output = output[fg_inds[:, None], gt_class_cols]
-        target = target[fg_inds]
-
         x1, y1, x2, y2 = self.bbox_transform(output, self.box2box_transform.weights)
         x1g, y1g, x2g, y2g = self.bbox_transform(target, self.box2box_transform.weights)
 
@@ -416,7 +403,9 @@ class FastRCNNOutputs(object):
         xc2 = torch.max(x2, x2g)
         yc2 = torch.max(y2, y2g)
 
-        intsctk = (xkis2 - xkis1) * (ykis2 - ykis1)  # Optimized
+        intsctk = torch.zeros(x1.size()).to(output)
+        mask = (ykis2 > ykis1) * (xkis2 > xkis1)
+        intsctk[mask] = (xkis2[mask] - xkis1[mask]) * (ykis2[mask] - ykis1[mask])
         unionk = (x2 - x1) * (y2 - y1) + (x2g - x1g) * (y2g - y1g) - intsctk + 1e-7
         iouk = intsctk / unionk
 
@@ -434,7 +423,14 @@ class FastRCNNOutputs(object):
         ar = (8 / (math.pi ** 2)) * arctan * ((w_pred - w_temp) * h_pred)
         ciouk = iouk - (u + alpha * ar)
 
-        ciouk = ((1 - ciouk).sum() / self.gt_classes.numel()) * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
+        bg_class_ind = self.pred_class_logits.shape[1] - 1
+
+        fg_inds = torch.nonzero(
+            (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
+        )[0]
+
+        ciouk = (1 - ciouk[fg_inds]).sum() / self.gt_classes.numel()
+        ciouk = ciouk * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
 
         return ciouk
 
