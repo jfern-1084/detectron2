@@ -40,7 +40,7 @@ def batched_diou_nms(boxes, scores, idxs, iou_threshold):
         mask = (idxs == id).nonzero().view(-1)
         dets = torch.cat((boxes[mask], scores[mask].view(-1, 1)), 1)
         # _, indices = cython_nms.soft_nms(dets.cpu().numpy())
-        _, indices = cython_nms.diounms(dets.cpu().numpy(), iou_threshold, 0.9)
+        indices = cython_nms.diounms(dets.cpu().numpy(), iou_threshold, 0.9)
         keep = torch.tensor(indices, device=device)
         result_mask[mask[keep]] = True
     keep = result_mask.nonzero().view(-1)
