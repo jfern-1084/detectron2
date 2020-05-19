@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from fvcore.nn import smooth_l1_loss
 
 from detectron2.config import global_cfg
-from detectron2.layers import batched_nms, cat, batched_soft_nms
+from detectron2.layers import batched_nms, cat, batched_diou_nms
 from detectron2.structures import Boxes, Instances
 from detectron2.utils.events import get_event_storage
 
@@ -142,8 +142,8 @@ def find_top_rpn_proposals(
         if keep.sum().item() != len(boxes):
             boxes, scores_per_img, lvl = boxes[keep], scores_per_img[keep], lvl[keep]
 
-        keep = batched_nms(boxes.tensor, scores_per_img, lvl, nms_thresh)
-        # keep = batched_soft_nms(boxes.tensor, scores_per_img, lvl)
+        # keep = batched_nms(boxes.tensor, scores_per_img, lvl, nms_thresh)
+        keep = batched_diou_nms(boxes.tensor, scores_per_img, lvl, nms_thresh)
         # In Detectron1, there was different behavior during training vs. testing.
         # (https://github.com/facebookresearch/Detectron/issues/459)
         # During training, topk is over the proposals from *all* images in the training batch.

@@ -29,7 +29,7 @@ def batched_nms(boxes, scores, idxs, iou_threshold):
     return keep
 
 #Work in progress!
-def batched_soft_nms(boxes, scores, idxs):
+def batched_diou_nms(boxes, scores, idxs, iou_threshold):
     #Added by Johan for experimenting with soft_nms
     #Replace this code with cuda code once available
     assert boxes.shape[-1] == 4
@@ -39,7 +39,7 @@ def batched_soft_nms(boxes, scores, idxs):
     for id in torch.unique(idxs).cpu().tolist():
         mask = (idxs == id).nonzero().view(-1)
         dets = torch.cat((boxes[mask], scores[mask].view(-1, 1)), 1)
-        _, indices = cython_nms.soft_nms(dets.cpu().numpy())
+        _, indices = cython_nms.diounms(dets.cpu().numpy(), iou_threshold.cpu().numpy(), 0.9)
         keep = torch.tensor(indices, device=device)
         result_mask[mask[keep]] = True
     keep = result_mask.nonzero().view(-1)
