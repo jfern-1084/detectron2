@@ -413,15 +413,21 @@ class FastRCNNOutputs(object):
         d = ((x_center - x_center_g) ** 2) + ((y_center - y_center_g) ** 2)
         u = d / c
 
+        v = (4 / (math.pi ** 2)) * torch.pow((torch.atan(w_gt / h_gt) - torch.atan(w_pred / h_pred)), 2)
         with torch.no_grad():
-            arctan = torch.atan(w_gt / h_gt) - torch.atan(w_pred / h_pred)
-            v = (4 / (math.pi ** 2)) * torch.pow((torch.atan(w_gt / h_gt) - torch.atan(w_pred / h_pred)), 2)
             S = 1 - iouk
             alpha = v / (S + v)
-            w_temp = 2 * w_pred
+        ciouk = iouk - (u + alpha * v)
 
-        ar = (8 / (math.pi ** 2)) * arctan * ((w_pred - w_temp) * h_pred)
-        ciouk = iouk - (u + alpha * ar)
+        # with torch.no_grad():
+        #     arctan = torch.atan(w_gt / h_gt) - torch.atan(w_pred / h_pred)
+        #     v = (4 / (math.pi ** 2)) * torch.pow((torch.atan(w_gt / h_gt) - torch.atan(w_pred / h_pred)), 2)
+        #     S = 1 - iouk
+        #     alpha = v / (S + v)
+        #     w_temp = 2 * w_pred
+        #
+        # ar = (8 / (math.pi ** 2)) * arctan * ((w_pred - w_temp) * h_pred)
+        # ciouk = iouk - (u + alpha * ar)
 
         bg_class_ind = self.pred_class_logits.shape[1] - 1
 
