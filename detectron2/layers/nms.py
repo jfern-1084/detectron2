@@ -29,23 +29,27 @@ def batched_nms(boxes, scores, idxs, iou_threshold):
     return keep
 
 #Work in progress!
-def batched_diou_nms(boxes, scores, idxs, iou_threshold):
-    #Added by Johan for experimenting with soft_nms
-    #Replace this code with cuda code once available
-    assert boxes.shape[-1] == 4
+# Deprecated for now due to move to SOCIP.
+# Removed form __init__ as well. Add it when it is possible.
+# pyd and so files of cython_nms are available on github repo for now
 
-    device = global_cfg.MODEL.DEVICE
-    result_mask = scores.new_zeros(scores.size(), dtype=torch.bool)
-    for id in torch.unique(idxs).cpu().tolist():
-        mask = (idxs == id).nonzero().view(-1)
-        dets = torch.cat((boxes[mask], scores[mask].view(-1, 1)), 1)
-        # _, indices = cython_nms.soft_nms(dets.cpu().numpy())
-        indices = cython_nms.diounms(dets.cpu().numpy(), iou_threshold, 0.9)
-        keep = torch.tensor(indices, device=device)
-        result_mask[mask[keep]] = True
-    keep = result_mask.nonzero().view(-1)
-    keep = keep[scores[keep].argsort(descending=True)]
-    return keep
+# def batched_diou_nms(boxes, scores, idxs, iou_threshold):
+#     #Added by Johan for experimenting with soft_nms
+#     #Replace this code with cuda code once available
+#     assert boxes.shape[-1] == 4
+#
+#     device = global_cfg.MODEL.DEVICE
+#     result_mask = scores.new_zeros(scores.size(), dtype=torch.bool)
+#     for id in torch.unique(idxs).cpu().tolist():
+#         mask = (idxs == id).nonzero().view(-1)
+#         dets = torch.cat((boxes[mask], scores[mask].view(-1, 1)), 1)
+#         # _, indices = cython_nms.soft_nms(dets.cpu().numpy())
+#         indices = cython_nms.diounms(dets.cpu().numpy(), iou_threshold, 0.9)
+#         keep = torch.tensor(indices, device=device)
+#         result_mask[mask[keep]] = True
+#     keep = result_mask.nonzero().view(-1)
+#     keep = keep[scores[keep].argsort(descending=True)]
+#     return keep
 
 
 # Note: this function (nms_rotated) might be moved into
