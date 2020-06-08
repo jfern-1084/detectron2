@@ -7,7 +7,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from detectron2.config import configurable, global_cfg
-from detectron2.layers import Linear, ShapeSpec, batched_nms, cat, batched_diou_nms
+from detectron2.layers import Linear, ShapeSpec, batched_nms, cat #, batched_diou_nms
 from detectron2.modeling.box_regression import Box2BoxTransform, apply_deltas_broadcast
 from detectron2.structures import Boxes, Instances
 from detectron2.utils.events import get_event_storage
