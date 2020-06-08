@@ -6,8 +6,8 @@ from torchvision.ops import boxes as box_ops
 from torchvision.ops import nms  # BC-compat
 
 #NMS and Soft-NMS
-from detectron2.layers import cython_nms
-from detectron2.config import global_cfg
+# from detectron2.layers import cython_nms
+# from detectron2.config import global_cfg
 
 def batched_nms(boxes, scores, idxs, iou_threshold):
     """
