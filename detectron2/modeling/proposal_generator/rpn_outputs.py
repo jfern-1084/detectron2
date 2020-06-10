@@ -142,10 +142,15 @@ def find_top_rpn_proposals(
         if keep.sum().item() != len(boxes):
             boxes, scores_per_img, lvl = boxes[keep], scores_per_img[keep], lvl[keep]
 
-        if global_cfg.MODEL.RPN.NMS_TYPE == "diou_nms":
-            keep = batched_diou_nms(boxes.tensor, scores_per_img, lvl, nms_thresh)
-        else: #Default greedy NMS
-            keep = batched_nms(boxes.tensor, scores_per_img, lvl, nms_thresh)
+        keep = batched_nms(boxes.tensor, scores_per_img, lvl, nms_thresh)
+
+        #DIOU NMS commented for now
+        # if global_cfg.MODEL.RPN.NMS_TYPE == "diou_nms":
+        #     keep = batched_diou_nms(boxes.tensor, scores_per_img, lvl, nms_thresh)
+        # else: #Default greedy NMS
+        #     keep = batched_nms(boxes.tensor, scores_per_img, lvl, nms_thresh)
+
+
         # In Detectron1, there was different behavior during training vs. testing.
         # (https://github.com/facebookresearch/Detectron/issues/459)
         # During training, topk is over the proposals from *all* images in the training batch.

@@ -115,11 +115,13 @@ def fast_rcnn_inference_single_image(
         boxes = boxes[filter_mask]
     scores = scores[filter_mask]
 
-    # Apply per-class NMS
-    keep = batched_diou_nms(boxes, scores, filter_inds[:, 1], nms_thresh) \
-           if global_cfg.MODEL.ROI_BOX_HEAD.NMS_TYPE == "diou_nms" \
-           else \
-           batched_nms(boxes, scores, filter_inds[:, 1], nms_thresh)
+    # Apply per-class NMS.
+    keep = batched_nms(boxes, scores, filter_inds[:, 1], nms_thresh)
+    # DIOU NMS commented for now
+    # keep = batched_diou_nms(boxes, scores, filter_inds[:, 1], nms_thresh) \
+    #        if global_cfg.MODEL.ROI_BOX_HEAD.NMS_TYPE == "diou_nms" \
+    #        else \
+    #        batched_nms(boxes, scores, filter_inds[:, 1], nms_thresh)
 
     if topk_per_image >= 0:
         keep = keep[:topk_per_image]
@@ -326,18 +328,20 @@ class FastRCNNOutputs(object):
             self.proposals.tensor, self.gt_boxes.tensor
         )
 
+        # Optimized code commented for now
+
         # Borrowed from sl1. Earlier verison used mask code
-        bg_class_ind = self.pred_class_logits.shape[1] - 1
-        box_dim = target.size(1)  # 4 or 5
-
-        fg_inds = torch.nonzero(
-            (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
-        )[0]
-
-        gt_class_cols = torch.arange(box_dim, device=self.pred_proposal_deltas.device)
-
-        output = output[fg_inds[:, None], gt_class_cols]
-        target = target[fg_inds]
+        # bg_class_ind = self.pred_class_logits.shape[1] - 1
+        # box_dim = target.size(1)  # 4 or 5
+        #
+        # fg_inds = torch.nonzero(
+        #     (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
+        # )[0]
+        #
+        # gt_class_cols = torch.arange(box_dim, device=self.pred_proposal_deltas.device)
+        #
+        # output = output[fg_inds[:, None], gt_class_cols]
+        # target = target[fg_inds]
 
         x1, y1, x2, y2 = self.bbox_transform(output, self.box2box_transform.weights)
         x1g, y1g, x2g, y2g = self.bbox_transform(target, self.box2box_transform.weights)
@@ -360,7 +364,13 @@ class FastRCNNOutputs(object):
         xc2 = torch.max(x2, x2g)
         yc2 = torch.max(y2, y2g)
 
-        intsctk = (xkis2 - xkis1) * (ykis2 - ykis1)   #Optimized
+        # Optimized code commented for now
+
+        # intsctk = (xkis2 - xkis1) * (ykis2 - ykis1)   #Optimized
+
+        intsctk = torch.zeros(x1.size()).to(self.pred_proposal_deltas.device)
+        mask = (ykis2 > ykis1) * (xkis2 > xkis1)
+
         unionk = (x2 - x1) * (y2 - y1) + (x2g - x1g) * (y2g - y1g) - intsctk + 1e-7
         iouk = intsctk / unionk
 
@@ -369,9 +379,21 @@ class FastRCNNOutputs(object):
         u = d / c
         diouk = iouk - u
 
-        diouk = ((1 - diouk).sum() / self.gt_classes.numel()) * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
+
+        # Retesting previous version of DIOU
+        # Borrowed from sl1
+        bg_class_ind = self.pred_class_logits.shape[1] - 1
+
+        fg_inds = torch.nonzero(
+            (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
+        )[0]
+
+
+        diouk = ((1 - diouk[fg_inds]).sum() / self.gt_classes.numel()) * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
 
         return diouk
+
+
 
     def compute_ciou(self):
 
