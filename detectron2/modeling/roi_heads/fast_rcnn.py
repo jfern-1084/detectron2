@@ -328,9 +328,9 @@ class FastRCNNOutputs(object):
             self.proposals.tensor, self.gt_boxes.tensor
         )
 
-        # Optimized code commented for now
+        #Optimized code commented for now
 
-        # Borrowed from sl1. Earlier verison used mask code
+        #Borrowed from sl1. Earlier verison used mask code
         # bg_class_ind = self.pred_class_logits.shape[1] - 1
         # box_dim = target.size(1)  # 4 or 5
         #
@@ -364,12 +364,14 @@ class FastRCNNOutputs(object):
         xc2 = torch.max(x2, x2g)
         yc2 = torch.max(y2, y2g)
 
-        # Optimized code commented for now
+        #Optimized code commented for now
 
         # intsctk = (xkis2 - xkis1) * (ykis2 - ykis1)   #Optimized
 
+        #These lines need to be changed in case optimized is used
         intsctk = torch.zeros(x1.size()).to(self.pred_proposal_deltas.device)
         mask = (ykis2 > ykis1) * (xkis2 > xkis1)
+        intsctk[mask] = (xkis2[mask] - xkis1[mask]) * (ykis2[mask] - ykis1[mask])
 
         unionk = (x2 - x1) * (y2 - y1) + (x2g - x1g) * (y2g - y1g) - intsctk + 1e-7
         iouk = intsctk / unionk
