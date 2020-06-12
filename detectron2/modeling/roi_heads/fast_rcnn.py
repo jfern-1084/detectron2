@@ -331,17 +331,17 @@ class FastRCNNOutputs(object):
         #Optimized code commented for now
 
         #Borrowed from sl1. Earlier verison used mask code
-        # bg_class_ind = self.pred_class_logits.shape[1] - 1
-        # box_dim = target.size(1)  # 4 or 5
-        #
-        # fg_inds = torch.nonzero(
-        #     (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
-        # )[0]
-        #
-        # gt_class_cols = torch.arange(box_dim, device=self.pred_proposal_deltas.device)
-        #
-        # output = output[fg_inds[:, None], gt_class_cols]
-        # target = target[fg_inds]
+        bg_class_ind = self.pred_class_logits.shape[1] - 1
+        box_dim = target.size(1)  # 4 or 5
+
+        fg_inds = torch.nonzero(
+            (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
+        )[0]
+
+        gt_class_cols = torch.arange(box_dim, device=self.pred_proposal_deltas.device)
+
+        output = output[fg_inds[:, None], gt_class_cols]
+        target = target[fg_inds]
 
         x1, y1, x2, y2 = self.bbox_transform(output, self.box2box_transform.weights)
         x1g, y1g, x2g, y2g = self.bbox_transform(target, self.box2box_transform.weights)
@@ -366,12 +366,12 @@ class FastRCNNOutputs(object):
 
         #Optimized code commented for now
 
-        # intsctk = (xkis2 - xkis1) * (ykis2 - ykis1)   #Optimized
+        intsctk = (xkis2 - xkis1) * (ykis2 - ykis1)   #Optimized
 
         #These lines need to be changed in case optimized is used
-        intsctk = torch.zeros(x1.size()).to(self.pred_proposal_deltas.device)
-        mask = (ykis2 > ykis1) * (xkis2 > xkis1)
-        intsctk[mask] = (xkis2[mask] - xkis1[mask]) * (ykis2[mask] - ykis1[mask])
+        # intsctk = torch.zeros(x1.size()).to(self.pred_proposal_deltas.device)
+        # mask = (ykis2 > ykis1) * (xkis2 > xkis1)
+        # intsctk[mask] = (xkis2[mask] - xkis1[mask]) * (ykis2[mask] - ykis1[mask])
 
         unionk = (x2 - x1) * (y2 - y1) + (x2g - x1g) * (y2g - y1g) - intsctk + 1e-7
         iouk = intsctk / unionk
@@ -382,16 +382,16 @@ class FastRCNNOutputs(object):
         diouk = iouk - u
 
 
-        # Retesting previous version of DIOU
-        # Borrowed from sl1
-        bg_class_ind = self.pred_class_logits.shape[1] - 1
+        #Retesting previous version of DIOU
+        #Borrowed from sl1
+        # bg_class_ind = self.pred_class_logits.shape[1] - 1
+        #
+        # fg_inds = torch.nonzero(
+        #     (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
+        # )[0]
 
-        fg_inds = torch.nonzero(
-            (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
-        )[0]
 
-
-        diouk = ((1 - diouk[fg_inds]).sum() / self.gt_classes.numel()) * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
+        diouk = ((1 - diouk).sum() / self.gt_classes.numel()) * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
 
         return diouk
 
