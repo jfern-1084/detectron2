@@ -12,6 +12,8 @@ from detectron2.modeling.box_regression import Box2BoxTransform, apply_deltas_br
 from detectron2.structures import Boxes, Instances
 from detectron2.utils.events import get_event_storage
 
+# from IPython.core.debugger import set_trace
+
 __all__ = ["fast_rcnn_inference", "FastRCNNOutputLayers"]
 
 
@@ -299,6 +301,67 @@ class FastRCNNOutputs(object):
 ##----------- Added by Johan on 1/3/2020 ------------------------------------------------------
 ##----------- Start of code -------------------------------------------------------------------
 
+    def compute_giou(self):
+        """
+        Generalized Intersection over Union: A Metric and A Loss for
+        Bounding Box Regression
+        https://arxiv.org/abs/1902.09630
+        code refer to:
+        https://github.com/sfzhang15/ATSS/blob/master/atss_core/modeling/rpn/atss/loss.py#L36
+        Args:
+            pred (Tensor): Predicted bboxes of format (x1, y1, x2, y2),
+                shape (n, 4).
+            target (Tensor): Corresponding gt bboxes, shape (n, 4).
+            eps (float): Eps to avoid log(0).
+        Return:
+            Tensor: Loss tensor.
+        """
+
+        pred = self.proposals.tensor
+        target = self.gt_boxes.tensor
+        eps = 1e-7
+
+        # overlap
+        lt = torch.max(pred[:, :2], target[:, :2])
+        rb = torch.min(pred[:, 2:], target[:, 2:])
+        wh = (rb - lt).clamp(min=0)
+        overlap = wh[:, 0] * wh[:, 1]
+
+        # union
+        ap = (pred[:, 2] - pred[:, 0]) * (pred[:, 3] - pred[:, 1])
+        ag = (target[:, 2] - target[:, 0]) * (target[:, 3] - target[:, 1])
+        union = ap + ag - overlap + eps
+
+        # IoU
+        ious = overlap / union
+
+        # enclose area
+        enclose_x1y1 = torch.min(pred[:, :2], target[:, :2])
+        enclose_x2y2 = torch.max(pred[:, 2:], target[:, 2:])
+        enclose_wh = (enclose_x2y2 - enclose_x1y1).clamp(min=0)
+        enclose_area = enclose_wh[:, 0] * enclose_wh[:, 1] + eps
+
+
+        #Borrowed from sl1
+        bg_class_ind = self.pred_class_logits.shape[1] - 1
+
+        fg_inds = torch.nonzero(
+            (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
+        )[0]
+
+
+        # GIoU
+        # set_trace()
+
+        gious = ious - (enclose_area - union) / enclose_area
+        # loss = (1 - gious)  #From original
+        loss = ((1 - gious[fg_inds]).sum() / self.gt_classes.numel())
+        loss = loss * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
+
+        return loss
+
+
+
     def bbox_transform(self, deltas, weights):
         wx, wy, ww, wh = weights
         dx = deltas[:, 0::4] / wx
@@ -327,6 +390,8 @@ class FastRCNNOutputs(object):
         target = self.box2box_transform.get_deltas(
             self.proposals.tensor, self.gt_boxes.tensor
         )
+
+        # set_trace()
 
         #Optimized code commented for now
 
@@ -496,6 +561,8 @@ class FastRCNNOutputs(object):
             losses_dict["loss_box_reg"] = self.compute_diou()
         elif reg_loss == "ciou":
             losses_dict["loss_box_reg"] = self.compute_ciou()
+        elif reg_loss == "giou":
+            losses_dict["loss_box_reg"] = self.compute_giou()
         else:
             losses_dict["loss_box_reg"] = self.smooth_l1_loss()
 
