@@ -317,9 +317,27 @@ class FastRCNNOutputs(object):
             Tensor: Loss tensor.
         """
 
-        pred = self.proposals.tensor
+        #Using Predictions instead of proposals
+        # pred = self.proposals.tensor
+        pred = apply_deltas_broadcast(
+            self.box2box_transform, self.pred_proposal_deltas, self.proposals.tensor
+        )
         target = self.gt_boxes.tensor
         eps = 1e-7
+
+        bg_class_ind = self.pred_class_logits.shape[1] - 1
+        box_dim = target.size(1)  # 4 or 5
+
+        fg_inds = torch.nonzero(
+            (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
+        )[0]
+
+        gt_class_cols = torch.arange(box_dim, device=self.pred_proposal_deltas.device)
+
+        pred = pred[fg_inds[:, None], gt_class_cols]
+        target = target[fg_inds]
+
+        # set_trace()
 
         # overlap
         lt = torch.max(pred[:, :2], target[:, :2])
@@ -343,19 +361,17 @@ class FastRCNNOutputs(object):
 
 
         #Borrowed from sl1
-        bg_class_ind = self.pred_class_logits.shape[1] - 1
-
-        fg_inds = torch.nonzero(
-            (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
-        )[0]
+        # bg_class_ind = self.pred_class_logits.shape[1] - 1
+        #
+        # fg_inds = torch.nonzero(
+        #     (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
+        # )[0]
 
 
         # GIoU
-        # set_trace()
-
         gious = ious - (enclose_area - union) / enclose_area
         # loss = (1 - gious)  #From original
-        loss = ((1 - gious[fg_inds]).sum() / self.gt_classes.numel())
+        loss = ((1 - gious).sum() / self.gt_classes.numel())
         loss = loss * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
 
         return loss
