@@ -378,6 +378,65 @@ class FastRCNNOutputs(object):
 
 
 
+    def compute_diou_optim(self):
+
+        #Using Predictions instead of proposals
+        # pred = self.proposals.tensor
+        pred = apply_deltas_broadcast(
+            self.box2box_transform, self.pred_proposal_deltas, self.proposals.tensor
+        )
+        target = self.gt_boxes.tensor
+        eps = 1e-7
+
+        bg_class_ind = self.pred_class_logits.shape[1] - 1
+        box_dim = target.size(1)  # 4 or 5
+
+        fg_inds = torch.nonzero(
+            (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
+        )[0]
+
+        gt_class_cols = torch.arange(box_dim, device=self.pred_proposal_deltas.device)
+
+        pred = pred[fg_inds[:, None], gt_class_cols]
+        target = target[fg_inds]
+
+        # set_trace()
+
+        # overlap / intersection
+        lt = torch.max(pred[:, :2], target[:, :2])
+        rb = torch.min(pred[:, 2:], target[:, 2:])
+        wh = (rb - lt).clamp(min=0)
+        overlap = wh[:, 0] * wh[:, 1]
+
+        # union
+        ap = (pred[:, 2] - pred[:, 0]) * (pred[:, 3] - pred[:, 1])
+        ag = (target[:, 2] - target[:, 0]) * (target[:, 3] - target[:, 1])
+        union = ap + ag - overlap + eps
+
+        # IoU
+        ious = overlap / union
+
+        # # enclose area
+        enclose_x1y1 = torch.min(pred[:, :2], target[:, :2])
+        enclose_x2y2 = torch.max(pred[:, 2:], target[:, 2:])
+        # enclose_wh = (enclose_x2y2 - enclose_x1y1).clamp(min=0)
+        # enclose_area = enclose_wh[:, 0] * enclose_wh[:, 1] + eps
+        c_squared = ((enclose_x2y2[:, 0] - enclose_x1y1[:, 0]) ** 2) + \
+                    ((enclose_x2y2[:, 1] - enclose_x1y1[:, 1]) ** 2) + eps
+        pred_center = torch.stack(((pred[:, 2] + pred[:, 0]) / 2, (pred[:, 3] + pred[:, 1]) / 2), 1)
+        target_center = torch.stack(((target[:, 2] + target[:, 0]) / 2, (target[:, 3] + target[:, 1]) / 2), 1)
+        rho_squared = ((target_center[:, 0] - pred_center[:, 0]) ** 2) + \
+                      ((target_center[:, 1] - pred_center[:, 1]) ** 2)
+
+        # DIoU
+        dious = ious - (rho_squared / c_squared)
+        # loss = (1 - gious)  #From original
+        loss = ((1 - dious).sum() / self.gt_classes.numel())
+        loss = loss * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
+
+        return loss
+
+
     def bbox_transform(self, deltas, weights):
         wx, wy, ww, wh = weights
         dx = deltas[:, 0::4] / wx
@@ -574,7 +633,8 @@ class FastRCNNOutputs(object):
         reg_loss = self.cfg.MODEL.ROI_BOX_HEAD.LOSS
 
         if reg_loss == "diou":
-            losses_dict["loss_box_reg"] = self.compute_diou()
+            # losses_dict["loss_box_reg"] = self.compute_diou()
+            losses_dict["loss_box_reg"] = self.compute_diou_optim()
         elif reg_loss == "ciou":
             losses_dict["loss_box_reg"] = self.compute_ciou()
         elif reg_loss == "giou":
