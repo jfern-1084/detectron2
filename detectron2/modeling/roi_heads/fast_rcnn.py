@@ -385,7 +385,12 @@ class FastRCNNOutputs(object):
         pred = apply_deltas_broadcast(
             self.box2box_transform, self.pred_proposal_deltas, self.proposals.tensor
         )
-        target = self.gt_boxes.tensor
+        target_deltas = self.box2box_transform.get_deltas(
+            self.proposals.tensor, self.gt_boxes.tensor
+        )
+        target = apply_deltas_broadcast(
+            self.box2box_transform, target_deltas, self.gt_boxes.tensor
+        )
         eps = 1e-7
 
         bg_class_ind = self.pred_class_logits.shape[1] - 1
@@ -482,6 +487,9 @@ class FastRCNNOutputs(object):
 
         output = output[fg_inds[:, None], gt_class_cols]
         target = target[fg_inds]
+
+        #Using width, height instead of x2, y2. Remove if it doesn't work
+        # output[:,2:] = output[:]
 
         x1, y1, x2, y2 = self.bbox_transform(output, self.box2box_transform.weights)
         x1g, y1g, x2g, y2g = self.bbox_transform(target, self.box2box_transform.weights)
