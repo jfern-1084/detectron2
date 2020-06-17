@@ -443,11 +443,17 @@ class FastRCNNOutputs(object):
 
 
     def bbox_transform(self, deltas, weights):
+        # Using width, height instead of x2, y2. Remove if it doesn't work
+        widths = deltas[:, 2::4] - deltas[:, 0::4]
+        heights = deltas[:, 3::4] - deltas[:, 1::4]
+
         wx, wy, ww, wh = weights
         dx = deltas[:, 0::4] / wx
         dy = deltas[:, 1::4] / wy
-        dw = deltas[:, 2::4] / ww
-        dh = deltas[:, 3::4] / wh
+        # dw = deltas[:, 2::4] / ww
+        # dh = deltas[:, 3::4] / wh
+        dw = widths / ww
+        dh = heights / wh
 
         dw = torch.clamp(dw, max=self.box2box_transform.scale_clamp)
         dh = torch.clamp(dh, max=self.box2box_transform.scale_clamp)
@@ -473,8 +479,6 @@ class FastRCNNOutputs(object):
 
         # set_trace()
 
-        #Optimized code commented for now
-
         #Borrowed from sl1. Earlier verison used mask code
         bg_class_ind = self.pred_class_logits.shape[1] - 1
         box_dim = target.size(1)  # 4 or 5
@@ -487,9 +491,6 @@ class FastRCNNOutputs(object):
 
         output = output[fg_inds[:, None], gt_class_cols]
         target = target[fg_inds]
-
-        #Using width, height instead of x2, y2. Remove if it doesn't work
-        # output[:,2:] = output[:]
 
         x1, y1, x2, y2 = self.bbox_transform(output, self.box2box_transform.weights)
         x1g, y1g, x2g, y2g = self.bbox_transform(target, self.box2box_transform.weights)
@@ -512,7 +513,7 @@ class FastRCNNOutputs(object):
         xc2 = torch.max(x2, x2g)
         yc2 = torch.max(y2, y2g)
 
-        #Optimized code commented for now
+        #Optimized code
 
         intsctk = (xkis2 - xkis1) * (ykis2 - ykis1)   #Optimized
 
@@ -642,7 +643,7 @@ class FastRCNNOutputs(object):
 
         if reg_loss == "diou":
             # losses_dict["loss_box_reg"] = self.compute_diou()
-            losses_dict["loss_box_reg"] = self.compute_diou_optim()
+            losses_dict["loss_box_reg"] = self.compute_diou()
         elif reg_loss == "ciou":
             losses_dict["loss_box_reg"] = self.compute_ciou()
         elif reg_loss == "giou":
