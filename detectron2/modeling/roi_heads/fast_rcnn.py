@@ -262,11 +262,6 @@ class FastRCNNOutputs:
 
         if self._no_instances:
             return 0.0 * self.pred_proposal_deltas.sum()
-        gt_proposal_deltas = self.box2box_transform.get_deltas(
-            self.proposals.tensor, self.gt_boxes.tensor
-        )
-
-        box_dim = gt_proposal_deltas.size(1)  # 4 or 5
 
         box_dim = self.gt_boxes.tensor.size(1)  # 4 or 5
         cls_agnostic_bbox_reg = self.pred_proposal_deltas.size(1) == box_dim
@@ -329,7 +324,24 @@ class FastRCNNOutputs:
 ##----------- Start of code -------------------------------------------------------------------
 
     def compute_giou_fvcore(self):
-        loss = giou_loss()
+
+        box_dim = self.gt_boxes.tensor.size(1)  # 4 or 5
+        device = self.pred_proposal_deltas.device
+        bg_class_ind = self.pred_class_logits.shape[1] - 1
+        gt_class_cols = torch.arange(box_dim, device=device)
+
+        # set_trace()
+
+        fg_inds = nonzero_tuple((self.gt_classes >= 0) & (self.gt_classes < bg_class_ind))[0]
+
+        loss = giou_loss(
+                self._predict_boxes()[fg_inds[:, None], gt_class_cols],
+                self.gt_boxes.tensor[fg_inds],
+                reduction="sum",
+            )
+
+        loss = loss / self.gt_classes.numel()
+        loss = loss * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
 
         return loss
 
@@ -668,7 +680,7 @@ class FastRCNNOutputs:
         losses_dict = {
             "loss_cls": self.softmax_cross_entropy_loss()
         }
-        return {"loss_cls": self.softmax_cross_entropy_loss(), "loss_box_reg": self.box_reg_loss()}
+        # return {"loss_cls": self.softmax_cross_entropy_loss(), "loss_box_reg": self.box_reg_loss()}
 
         #Will need to improve the configuration part
         reg_loss = self.cfg.MODEL.ROI_BOX_HEAD.LOSS
@@ -679,7 +691,7 @@ class FastRCNNOutputs:
         elif reg_loss == "ciou":
             losses_dict["loss_box_reg"] = self.compute_ciou()
         elif reg_loss == "giou":
-            losses_dict["loss_box_reg"] = self.compute_giou()
+            losses_dict["loss_box_reg"] = self.compute_giou_fvcore()
         else:
             losses_dict["loss_box_reg"] = self.smooth_l1_loss()
 
