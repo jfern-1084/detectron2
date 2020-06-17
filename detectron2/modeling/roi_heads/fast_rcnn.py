@@ -423,34 +423,59 @@ class FastRCNNOutputs:
 
 
 
-    # def compute_diou_optim(self):
+    def compute_diou_fvcore(self):
 
-        #Using Predictions instead of proposals
-        # pred = self.proposals.tensor
-        # pred = apply_deltas_broadcast(
-        #     self.box2box_transform, self.pred_proposal_deltas, self.proposals.tensor
-        # )
-        # target_deltas = self.box2box_transform.get_deltas(
-        #     self.proposals.tensor, self.gt_boxes.tensor
-        # )
-        # target = apply_deltas_broadcast(
-        #     self.box2box_transform, target_deltas, self.gt_boxes.tensor
-        # )
+        box_dim = self.gt_boxes.tensor.size(1)  # 4 or 5
+        device = self.pred_proposal_deltas.device
+        bg_class_ind = self.pred_class_logits.shape[1] - 1
+        gt_class_cols = torch.arange(box_dim, device=device)
+
+        fg_inds = nonzero_tuple((self.gt_classes >= 0) & (self.gt_classes < bg_class_ind))[0]
+
+        boxes1 = self._predict_boxes()[fg_inds[:, None], gt_class_cols]
+        boxes2 = self.gt_boxes.tensor[fg_inds]
+        eps = 1e-7
+
+        x1, y1, x2, y2 = boxes1.unbind(dim=-1)
+        x1g, y1g, x2g, y2g = boxes2.unbind(dim=-1)
+
+        assert (x2 >= x1).all(), "bad box: x1 larger than x2"
+        assert (y2 >= y1).all(), "bad box: y1 larger than y2"
+
+        # Intersection keypoints
+        xkis1 = torch.max(x1, x1g)
+        ykis1 = torch.max(y1, y1g)
+        xkis2 = torch.min(x2, x2g)
+        ykis2 = torch.min(y2, y2g)
+
+        intsctk = torch.zeros_like(x1)
+        mask = (ykis2 > ykis1) & (xkis2 > xkis1)
+        intsctk[mask] = (xkis2[mask] - xkis1[mask]) * (ykis2[mask] - ykis1[mask])
+        unionk = (x2 - x1) * (y2 - y1) + (x2g - x1g) * (y2g - y1g) - intsctk
+        iouk = intsctk / (unionk + eps)
+
+        # smallest enclosing box
+        xc1 = torch.min(x1, x1g)
+        yc1 = torch.min(y1, y1g)
+        xc2 = torch.max(x2, x2g)
+        yc2 = torch.max(y2, y2g)
+
+        x_p = (x2 + x1) / 2
+        y_p = (y2 + y1) / 2
+        x_g = (x1g + x2g) / 2
+        y_g = (y1g + y2g) / 2
+
+        # area_c = (xc2 - xc1) * (yc2 - yc1)
+        # miouk = iouk - ((area_c - unionk) / (area_c + eps))
+
+        # set_trace()
+
+        c = ((xc2 - xc1) ** 2) + ((yc2 - yc1) ** 2) + eps
+        d = ((x_p - x_g) ** 2) + ((y_p - y_g) ** 2)
+        u = d / c
+        diouk = iouk - u
+
         # eps = 1e-7
-        #
-        # bg_class_ind = self.pred_class_logits.shape[1] - 1
-        # box_dim = target.size(1)  # 4 or 5
-        #
-        # fg_inds = torch.nonzero(
-        #     (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
-        # )[0]
-        #
-        # gt_class_cols = torch.arange(box_dim, device=self.pred_proposal_deltas.device)
-        #
-        # pred = pred[fg_inds[:, None], gt_class_cols]
-        # target = target[fg_inds]
-        #
-        # # set_trace()
         #
         # # overlap / intersection
         # lt = torch.max(pred[:, :2], target[:, :2])
@@ -480,11 +505,12 @@ class FastRCNNOutputs:
         #
         # # DIoU
         # dious = ious - (rho_squared / c_squared)
-        # # loss = (1 - gious)  #From original
-        # loss = ((1 - dious).sum() / self.gt_classes.numel())
-        # loss = loss * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
+        # loss = (1 - gious)  #From original
 
-        # return loss
+        loss = ((1 - diouk).sum() / self.gt_classes.numel())
+        loss = loss * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
+
+        return loss
 
 
     def bbox_transform(self, deltas, weights):
@@ -687,7 +713,7 @@ class FastRCNNOutputs:
 
         if reg_loss == "diou":
             # losses_dict["loss_box_reg"] = self.compute_diou()
-            losses_dict["loss_box_reg"] = self.compute_diou()
+            losses_dict["loss_box_reg"] = self.compute_diou_fvcore()
         elif reg_loss == "ciou":
             losses_dict["loss_box_reg"] = self.compute_ciou()
         elif reg_loss == "giou":

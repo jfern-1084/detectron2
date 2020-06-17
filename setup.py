@@ -113,6 +113,7 @@ def get_extensions():
 
         # It's better if pytorch can do this by default ..
         CC = os.environ.get("CC", None)
+        #Hidden for SOSCIP account. Will check and reactivate soon. Johan
         # if CC is not None:
         #     extra_compile_args["nvcc"].append("-ccbin={}".format(CC))
 
@@ -183,7 +184,7 @@ setup(
         "tqdm>4.29.0",
         "tensorboard",
         "fvcore>=0.1.1",
-        "pycocotools>=2.0.1",
+        "pycocotools>=2.0",  #Using my version for now. Will change later. Johan
         "future",  # used by caffe2
         "pydot",  # used to save caffe2 SVGs
     ],
