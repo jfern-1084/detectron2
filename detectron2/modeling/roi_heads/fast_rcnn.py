@@ -2,7 +2,7 @@
 import logging
 import torch
 import math
-from fvcore.nn import smooth_l1_loss
+from fvcore.nn import smooth_l1_loss, giou_loss
 from torch import nn
 from torch.nn import functional as F
 
@@ -301,6 +301,12 @@ class FastRCNNOutputs(object):
 ##----------- Added by Johan on 1/3/2020 ------------------------------------------------------
 ##----------- Start of code -------------------------------------------------------------------
 
+    def compute_giou_fvcore(self):
+        loss = giou_loss()
+
+        return loss
+
+
     def compute_giou(self):
         """
         Generalized Intersection over Union: A Metric and A Loss for
@@ -472,16 +478,14 @@ class FastRCNNOutputs(object):
 
     def compute_diou(self):
 
-        output = self.pred_proposal_deltas
-        target = self.box2box_transform.get_deltas(
-            self.proposals.tensor, self.gt_boxes.tensor
+        output_delta = self.pred_proposal_deltas
+        target_delta = self.box2box_transform.get_deltas(
+                          self.proposals.tensor, self.gt_boxes.tensor
         )
-
-        # set_trace()
 
         #Borrowed from sl1. Earlier verison used mask code
         bg_class_ind = self.pred_class_logits.shape[1] - 1
-        box_dim = target.size(1)  # 4 or 5
+        box_dim = target_delta.size(1)  # 4 or 5
 
         fg_inds = torch.nonzero(
             (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
@@ -489,11 +493,13 @@ class FastRCNNOutputs(object):
 
         gt_class_cols = torch.arange(box_dim, device=self.pred_proposal_deltas.device)
 
-        output = output[fg_inds[:, None], gt_class_cols]
-        target = target[fg_inds]
+        output_delta = output_delta[fg_inds[:, None], gt_class_cols]
+        target_delta = target_delta[fg_inds]
 
-        x1, y1, x2, y2 = self.bbox_transform(output, self.box2box_transform.weights)
-        x1g, y1g, x2g, y2g = self.bbox_transform(target, self.box2box_transform.weights)
+        x1, y1, x2, y2 = self.bbox_transform(output_delta, self.box2box_transform.weights)
+        x1g, y1g, x2g, y2g = self.bbox_transform(target_delta, self.box2box_transform.weights)
+
+        # set_trace()
 
         x2 = torch.max(x1, x2)
         y2 = torch.max(y1, y2)
