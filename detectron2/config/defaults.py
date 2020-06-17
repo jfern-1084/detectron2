@@ -28,7 +28,7 @@ _C.MODEL.KEYPOINT_ON = False
 _C.MODEL.DEVICE = "cuda"
 _C.MODEL.META_ARCHITECTURE = "GeneralizedRCNN"
 
-# Path (possibly with schema like catalog:// or detectron2://) to a checkpoint file
+# Path (a file path, or URL like detectron2://.., https://..) to a checkpoint file
 # to be loaded to the model. You can find available models in the model zoo.
 _C.MODEL.WEIGHTS = ""
 
@@ -228,7 +228,7 @@ _C.MODEL.RPN.PRE_NMS_TOPK_TEST = 6000
 # of proposals from all levels
 # NOTE: When FPN is used, the meaning of this config is different from Detectron1.
 # It means per-batch topk in Detectron1, but per-image topk here.
-# See "modeling/rpn/rpn_outputs.py" for details.
+# See the "find_top_rpn_proposals" function for details.
 _C.MODEL.RPN.POST_NMS_TOPK_TRAIN = 2000
 _C.MODEL.RPN.POST_NMS_TOPK_TEST = 1000
 # NMS threshold used on RPN proposals
@@ -290,6 +290,11 @@ _C.MODEL.ROI_BOX_HEAD = CN()
 # C4 don't use head name option
 # Options for non-C4 models: FastRCNNConvFCHead,
 _C.MODEL.ROI_BOX_HEAD.NAME = ""
+# Options are: "smooth_l1", "giou"
+_C.MODEL.ROI_BOX_HEAD.BBOX_REG_LOSS_TYPE = "smooth_l1"
+# The final scaling coefficient on the box regression loss, used to balance the magnitude of its
+# gradients with other losses in the model. See also `MODEL.ROI_KEYPOINT_HEAD.LOSS_WEIGHT`.
+_C.MODEL.ROI_BOX_HEAD.BBOX_REG_LOSS_WEIGHT = 1.0
 # Default weights on (dx, dy, dw, dh) for normalizing bbox regression targets
 # These are empirically chosen to approximately lead to unit variance targets
 _C.MODEL.ROI_BOX_HEAD.BBOX_REG_WEIGHTS = (10.0, 10.0, 5.0, 5.0)

@@ -94,9 +94,7 @@ def set_global_cfg(cfg: CfgNode) -> None:
 
     Assume that the given "cfg" has the key "KEY", after calling
     `set_global_cfg(cfg)`, the key can be accessed by:
-
-    .. code-block:: python
-
+    ::
         from detectron2.config import global_cfg
         print(global_cfg.KEY)
 
@@ -115,9 +113,7 @@ def configurable(init_func):
     object using the class's from_config classmethod.
 
     Examples:
-
-    .. code-block:: python
-
+    ::
         class A:
             @configurable
             def __init__(self, a, b=2, c=3):
@@ -135,7 +131,7 @@ def configurable(init_func):
     assert init_func.__name__ == "__init__", "@configurable should only be used for __init__!"
     if init_func.__module__.startswith("detectron2."):
         assert (
-            "experimental" in init_func.__doc__
+            init_func.__doc__ is not None and "experimental" in init_func.__doc__
         ), f"configurable {init_func} should be marked experimental"
 
     @functools.wraps(init_func)

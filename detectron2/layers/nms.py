@@ -9,7 +9,9 @@ from torchvision.ops import nms  # BC-compat
 # from detectron2.layers import cython_nms
 # from detectron2.config import global_cfg
 
-def batched_nms(boxes, scores, idxs, iou_threshold):
+def batched_nms(
+    boxes: torch.Tensor, scores: torch.Tensor, idxs: torch.Tensor, iou_threshold: float
+):
     """
     Same as torchvision.ops.boxes.batched_nms, but safer.
     """

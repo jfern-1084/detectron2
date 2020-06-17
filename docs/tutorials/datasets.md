@@ -27,9 +27,10 @@ DatasetCatalog.register("my_dataset", my_dataset_function)
 ```
 
 Here, the snippet associates a dataset "my_dataset" with a function that returns the data.
-The registration stays effective until the process exists.
+The function must return the same data if called multiple times.
+The registration stays effective until the process exits.
 
-The function can processes data from its original format into either one of the following:
+The function can process data from its original format into either one of the following:
 1. Detectron2's standard dataset dict, described below. This will work with many other builtin
 	 features in detectron2, so it's recommended to use it when it's sufficient for your task.
 2. Your custom dataset dict. You can also return arbitrary dicts in your own format,
@@ -64,16 +65,16 @@ and the required fields vary based on what the dataloader or the task needs (see
     It must be a member of
     [structures.BoxMode](../modules/structures.html#detectron2.structures.BoxMode).
     Currently supports: `BoxMode.XYXY_ABS`, `BoxMode.XYWH_ABS`.
-  + `category_id` (int): an integer in the range [0, num_categories) representing the category label.
+  + `category_id` (int): an integer in the range [0, num_categories-1] representing the category label.
     The value num_categories is reserved to represent the "background" category, if applicable.
   + `segmentation` (list[list[float]] or dict): the segmentation mask of the instance.
     + If `list[list[float]]`, it represents a list of polygons, one for each connected component
       of the object. Each `list[float]` is one simple polygon in the format of `[x1, y1, ..., xn, yn]`.
-      The Xs and Ys are either relative coordinates in [0, 1], or absolute coordinates,
-      depend on whether "bbox_mode" is relative.
+      The Xs and Ys are absolute coordinates in unit of pixels.
     + If `dict`, it represents the per-pixel segmentation mask in COCO's RLE format. The dict should have
 			keys "size" and "counts". You can convert a uint8 segmentation mask of 0s and 1s into
-			RLE format by `pycocotools.mask.encode(np.asarray(mask, order="F"))`.
+			such dict by `pycocotools.mask.encode(np.asarray(mask, order="F"))`.
+      `cfg.INPUT.MASK_FORMAT` must be set to `bitmask` if using the default data loader with such format.
   + `keypoints` (list[float]): in the format of [x1, y1, v1,..., xn, yn, vn].
     v[i] means the [visibility](http://cocodataset.org/#format-data) of this keypoint.
     `n` must be equal to the number of keypoint categories.
