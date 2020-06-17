@@ -19,7 +19,7 @@ from detectron2.modeling.box_regression import Box2BoxTransform
 from detectron2.structures import Boxes, Instances
 from detectron2.utils.events import get_event_storage
 
-# from IPython.core.debugger import set_trace
+from IPython.core.debugger import set_trace
 
 __all__ = ["fast_rcnn_inference", "FastRCNNOutputLayers"]
 
@@ -469,43 +469,16 @@ class FastRCNNOutputs:
         # miouk = iouk - ((area_c - unionk) / (area_c + eps))
 
         # set_trace()
-
-        c = ((xc2 - xc1) ** 2) + ((yc2 - yc1) ** 2) + eps
-        d = ((x_p - x_g) ** 2) + ((y_p - y_g) ** 2)
+        c = 0
+        d = 0
+        if self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT == 10:
+            c = ((xc2 - xc1) ** 2) + ((yc2 - yc1) ** 2) + eps
+            d = ((x_p - x_g) ** 2) + ((y_p - y_g) ** 2)
+        else:
+            c = torch.sqrt(((xc2 - xc1) ** 2) + ((yc2 - yc1) ** 2) + eps)
+            d = torch.sqrt(((x_p - x_g) ** 2) + ((y_p - y_g) ** 2))
         u = d / c
         diouk = iouk - u
-
-        # eps = 1e-7
-        #
-        # # overlap / intersection
-        # lt = torch.max(pred[:, :2], target[:, :2])
-        # rb = torch.min(pred[:, 2:], target[:, 2:])
-        # wh = (rb - lt).clamp(min=0)
-        # overlap = wh[:, 0] * wh[:, 1]
-        #
-        # # union
-        # ap = (pred[:, 2] - pred[:, 0]) * (pred[:, 3] - pred[:, 1])
-        # ag = (target[:, 2] - target[:, 0]) * (target[:, 3] - target[:, 1])
-        # union = ap + ag - overlap + eps
-        #
-        # # IoU
-        # ious = overlap / union
-        #
-        # # # enclose area
-        # enclose_x1y1 = torch.min(pred[:, :2], target[:, :2])
-        # enclose_x2y2 = torch.max(pred[:, 2:], target[:, 2:])
-        # # enclose_wh = (enclose_x2y2 - enclose_x1y1).clamp(min=0)
-        # # enclose_area = enclose_wh[:, 0] * enclose_wh[:, 1] + eps
-        # c_squared = ((enclose_x2y2[:, 0] - enclose_x1y1[:, 0]) ** 2) + \
-        #             ((enclose_x2y2[:, 1] - enclose_x1y1[:, 1]) ** 2) + eps
-        # pred_center = torch.stack(((pred[:, 2] + pred[:, 0]) / 2, (pred[:, 3] + pred[:, 1]) / 2), 1)
-        # target_center = torch.stack(((target[:, 2] + target[:, 0]) / 2, (target[:, 3] + target[:, 1]) / 2), 1)
-        # rho_squared = ((target_center[:, 0] - pred_center[:, 0]) ** 2) + \
-        #               ((target_center[:, 1] - pred_center[:, 1]) ** 2)
-        #
-        # # DIoU
-        # dious = ious - (rho_squared / c_squared)
-        # loss = (1 - gious)  #From original
 
         loss = ((1 - diouk).sum() / self.gt_classes.numel())
         loss = loss * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
