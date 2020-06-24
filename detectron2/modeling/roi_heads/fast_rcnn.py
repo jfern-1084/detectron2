@@ -512,12 +512,17 @@ class FastRCNNOutputs:
 
     def compute_diou(self):
 
+        #Note: This version of DIOU uses delta values instead of actual bboxes
+        #I found delta values more efficient for our case
         output_delta = self.pred_proposal_deltas
         target_delta = self.box2box_transform.get_deltas(
                           self.proposals.tensor, self.gt_boxes.tensor
         )
 
         #Borrowed from sl1. Earlier verison used mask code
+        #This section simply set's mask = True for those coordinates bounding boxes
+        #which have an IOU above threshold (as per current Faster thr is 50, For
+        #Cascade it is 50, 60. 70) with gt_boxes
         bg_class_ind = self.pred_class_logits.shape[1] - 1
         box_dim = target_delta.size(1)  # 4 or 5
 
@@ -530,10 +535,14 @@ class FastRCNNOutputs:
         output_delta = output_delta[fg_inds[:, None], gt_class_cols]
         target_delta = target_delta[fg_inds]
 
+        #Note: We use delta values here as per the orignal authors code
+        #Delta values are : (center_x, center_y, w, h).
+        #Here the bbox_transform unlike Detectron2's Box2BoxTransform get_deltas converts
+        #the delta coordinates to x1, y1, x2, y2. These coordinates are still deltas but
+        #they are used in calculating DIOU loss and hence the bbox_transform function is still used
         x1, y1, x2, y2 = self.bbox_transform(output_delta, self.box2box_transform.weights)
         x1g, y1g, x2g, y2g = self.bbox_transform(target_delta, self.box2box_transform.weights)
 
-        # set_trace()
 
         x2 = torch.max(x1, x2)
         y2 = torch.max(y1, y2)
@@ -553,34 +562,25 @@ class FastRCNNOutputs:
         xc2 = torch.max(x2, x2g)
         yc2 = torch.max(y2, y2g)
 
-        #Optimized code
-
+        #Instersction of two boxes
         intsctk = (xkis2 - xkis1) * (ykis2 - ykis1)   #Optimized
 
-        #These lines need to be changed in case optimized is used
-        # intsctk = torch.zeros(x1.size()).to(self.pred_proposal_deltas.device)
-        # mask = (ykis2 > ykis1) * (xkis2 > xkis1)
-        # intsctk[mask] = (xkis2[mask] - xkis1[mask]) * (ykis2[mask] - ykis1[mask])
-
+        #Union of two boxes
         unionk = (x2 - x1) * (y2 - y1) + (x2g - x1g) * (y2g - y1g) - intsctk + 1e-7
         iouk = intsctk / unionk
 
+        #Note both of the below distances do not use square root.
+        #As per the authors advice the gradient would have to calculate square
+        #root as well. Hence it hasn't been used here.
+        #Length of largest diagonal of the polygon covering both boxes.
         c = ((xc2 - xc1) ** 2) + ((yc2 - yc1) ** 2) + 1e-7
+        #Distance between center points.
         d = ((x_p - x_g) ** 2) + ((y_p - y_g) ** 2)
         u = d / c
         diouk = iouk - u
 
-
-        #Retesting previous version of DIOU
-        #Borrowed from sl1
-        # bg_class_ind = self.pred_class_logits.shape[1] - 1
-        #
-        # fg_inds = torch.nonzero(
-        #     (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
-        # )[0]
-
-
-        diouk = ((1 - diouk).sum() / self.gt_classes.numel()) * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
+        diouk = (1 - diouk).sum() / self.gt_classes.numel()
+        diouk = diouk * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
 
         return diouk
 
@@ -588,16 +588,33 @@ class FastRCNNOutputs:
 
     def compute_ciou(self):
 
-        output = self.pred_proposal_deltas
-        target = self.box2box_transform.get_deltas(
-            self.proposals.tensor, self.gt_boxes.tensor
-        )
+        # output = self.pred_proposal_deltas
+        # target = self.box2box_transform.get_deltas(
+        #     self.proposals.tensor, self.gt_boxes.tensor
+        # )
+        #
+        # x1, y1, x2, y2 = self.bbox_transform(output, self.box2box_transform.weights)
+        # x1g, y1g, x2g, y2g = self.bbox_transform(target, self.box2box_transform.weights)
 
-        x1, y1, x2, y2 = self.bbox_transform(output, self.box2box_transform.weights)
-        x1g, y1g, x2g, y2g = self.bbox_transform(target, self.box2box_transform.weights)
+        box_dim = self.gt_boxes.tensor.size(1)  # 4 or 5
+        device = self.pred_proposal_deltas.device
+        bg_class_ind = self.pred_class_logits.shape[1] - 1
+        gt_class_cols = torch.arange(box_dim, device=device)
 
-        x2 = torch.max(x1, x2)
-        y2 = torch.max(y1, y2)
+        fg_inds = nonzero_tuple((self.gt_classes >= 0) & (self.gt_classes < bg_class_ind))[0]
+
+        boxes1 = self._predict_boxes()[fg_inds[:, None], gt_class_cols]
+        boxes2 = self.gt_boxes.tensor[fg_inds]
+
+        x1, y1, x2, y2 = boxes1.unbind(dim=-1)
+        x1g, y1g, x2g, y2g = boxes2.unbind(dim=-1)
+
+        # set_trace()
+
+        # x2 = torch.max(x1, x2)
+        # y2 = torch.max(y1, y2)
+        assert (x2 >= x1).all(), "bad box: x1 larger than x2"
+        assert (y2 >= y1).all(), "bad box: y1 larger than y2"
         w_pred = x2 - x1
         h_pred = y2 - y1
         w_gt = x2g - x1g
@@ -618,7 +635,8 @@ class FastRCNNOutputs:
         xc2 = torch.max(x2, x2g)
         yc2 = torch.max(y2, y2g)
 
-        intsctk = torch.zeros(x1.size()).to(output)
+        # intsctk = torch.zeros(x1.size()).to(output)
+        intsctk = torch.zeros_like(x1)
         mask = (ykis2 > ykis1) * (xkis2 > xkis1)
         intsctk[mask] = (xkis2[mask] - xkis1[mask]) * (ykis2[mask] - ykis1[mask])
         unionk = (x2 - x1) * (y2 - y1) + (x2g - x1g) * (y2g - y1g) - intsctk + 1e-7
@@ -634,13 +652,13 @@ class FastRCNNOutputs:
             alpha = v / (S + v)
         ciouk = iouk - (u + alpha * v)
 
-        bg_class_ind = self.pred_class_logits.shape[1] - 1
+        # bg_class_ind = self.pred_class_logits.shape[1] - 1
+        #
+        # fg_inds = torch.nonzero(
+        #     (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
+        # )[0]
 
-        fg_inds = torch.nonzero(
-            (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
-        )[0]
-
-        ciouk = (1 - ciouk[fg_inds]).sum() / self.gt_classes.numel()
+        ciouk = (1 - ciouk).sum() / self.gt_classes.numel()
 
         ciouk = ciouk * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
 
