@@ -588,33 +588,33 @@ class FastRCNNOutputs:
 
     def compute_ciou(self):
 
-        # output = self.pred_proposal_deltas
-        # target = self.box2box_transform.get_deltas(
-        #     self.proposals.tensor, self.gt_boxes.tensor
-        # )
+        output = self.pred_proposal_deltas
+        target = self.box2box_transform.get_deltas(
+            self.proposals.tensor, self.gt_boxes.tensor
+        )
+
+        x1, y1, x2, y2 = self.bbox_transform(output, self.box2box_transform.weights)
+        x1g, y1g, x2g, y2g = self.bbox_transform(target, self.box2box_transform.weights)
+
+        # box_dim = self.gt_boxes.tensor.size(1)  # 4 or 5
+        # device = self.pred_proposal_deltas.device
+        # bg_class_ind = self.pred_class_logits.shape[1] - 1
+        # gt_class_cols = torch.arange(box_dim, device=device)
         #
-        # x1, y1, x2, y2 = self.bbox_transform(output, self.box2box_transform.weights)
-        # x1g, y1g, x2g, y2g = self.bbox_transform(target, self.box2box_transform.weights)
+        # fg_inds = nonzero_tuple((self.gt_classes >= 0) & (self.gt_classes < bg_class_ind))[0]
+        #
+        # boxes1 = self._predict_boxes()[fg_inds[:, None], gt_class_cols]
+        # boxes2 = self.gt_boxes.tensor[fg_inds]
 
-        box_dim = self.gt_boxes.tensor.size(1)  # 4 or 5
-        device = self.pred_proposal_deltas.device
-        bg_class_ind = self.pred_class_logits.shape[1] - 1
-        gt_class_cols = torch.arange(box_dim, device=device)
-
-        fg_inds = nonzero_tuple((self.gt_classes >= 0) & (self.gt_classes < bg_class_ind))[0]
-
-        boxes1 = self._predict_boxes()[fg_inds[:, None], gt_class_cols]
-        boxes2 = self.gt_boxes.tensor[fg_inds]
-
-        x1, y1, x2, y2 = boxes1.unbind(dim=-1)
-        x1g, y1g, x2g, y2g = boxes2.unbind(dim=-1)
+        # x1, y1, x2, y2 = boxes1.unbind(dim=-1)
+        # x1g, y1g, x2g, y2g = boxes2.unbind(dim=-1)
 
         # set_trace()
 
-        # x2 = torch.max(x1, x2)
-        # y2 = torch.max(y1, y2)
-        assert (x2 >= x1).all(), "bad box: x1 larger than x2"
-        assert (y2 >= y1).all(), "bad box: y1 larger than y2"
+        x2 = torch.max(x1, x2)
+        y2 = torch.max(y1, y2)
+        # assert (x2 >= x1).all(), "bad box: x1 larger than x2"
+        # assert (y2 >= y1).all(), "bad box: y1 larger than y2"
         w_pred = x2 - x1
         h_pred = y2 - y1
         w_gt = x2g - x1g
@@ -652,13 +652,13 @@ class FastRCNNOutputs:
             alpha = v / (S + v)
         ciouk = iouk - (u + alpha * v)
 
-        # bg_class_ind = self.pred_class_logits.shape[1] - 1
-        #
-        # fg_inds = torch.nonzero(
-        #     (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
-        # )[0]
+        bg_class_ind = self.pred_class_logits.shape[1] - 1
 
-        ciouk = (1 - ciouk).sum() / self.gt_classes.numel()
+        fg_inds = torch.nonzero(
+            (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind), as_tuple=True
+        )[0]
+
+        ciouk = (1 - ciouk[fg_inds]).sum() / self.gt_classes.numel()
 
         ciouk = ciouk * self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT
 
