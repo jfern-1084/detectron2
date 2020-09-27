@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 
+import contextlib
 import logging
 import numpy as np
 import time
@@ -11,6 +12,15 @@ import detectron2.utils.comm as comm
 from detectron2.utils.events import EventStorage
 
 __all__ = ["HookBase", "TrainerBase", "SimpleTrainer"]
+
+
+try:
+    _nullcontext = contextlib.nullcontext  # python 3.7+
+except AttributeError:
+
+    @contextlib.contextmanager
+    def _nullcontext(enter_result=None):
+        yield enter_result
 
 
 class HookBase:
@@ -25,11 +35,13 @@ class HookBase:
             hook.before_step()
             trainer.run_step()
             hook.after_step()
+        iter += 1
         hook.after_train()
 
     Notes:
-        1. In the hook method, users can access `self.trainer` to access more
-           properties about the context (e.g., current iteration).
+        1. In the hook method, users can access ``self.trainer`` to access more
+           properties about the context (e.g., model, current iteration, or config
+           if using :class:`DefaultTrainer`).
 
         2. A hook that does something in :meth:`before_step` can often be
            implemented equivalently in :meth:`after_step`.
@@ -42,8 +54,8 @@ class HookBase:
            function properly.
 
     Attributes:
-        trainer: A weak reference to the trainer object. Set by the trainer when the hook is
-            registered.
+        trainer (TrainerBase): A weak reference to the trainer object. Set by the trainer
+            when the hook is registered.
     """
 
     def before_train(self):
@@ -129,6 +141,10 @@ class TrainerBase:
                     self.before_step()
                     self.run_step()
                     self.after_step()
+                # self.iter == max_iter can be used by `after_train` to
+                # tell whether the training successfully finished or failed
+                # due to exceptions.
+                self.iter += 1
             except Exception:
                 logger.exception("Exception during training:")
                 raise
@@ -140,18 +156,21 @@ class TrainerBase:
             h.before_train()
 
     def after_train(self):
+        self.storage.iter = self.iter
         for h in self._hooks:
             h.after_train()
 
     def before_step(self):
+        # Maintain the invariant that storage.iter == trainer.iter
+        # for the entire execution of each step
+        self.storage.iter = self.iter
+
         for h in self._hooks:
             h.before_step()
 
     def after_step(self):
         for h in self._hooks:
             h.after_step()
-        # this guarantees, that in each hook's after_step, storage.iter == trainer.iter
-        self.storage.step()
 
     def run_step(self):
         raise NotImplementedError
@@ -166,6 +185,9 @@ class SimpleTrainer(TrainerBase):
     1. Compute the loss with a data from the data_loader.
     2. Compute the gradients with the above loss.
     3. Update the model with the optimizer.
+
+    All other tasks during training (checkpointing, logging, evaluation, LR schedule)
+    are maintained by hooks, which can be registered by :meth:`TrainerBase.register_hooks`.
 
     If you want to do anything fancier than this,
     either subclass TrainerBase and implement your own `run_step`,
@@ -212,22 +234,27 @@ class SimpleTrainer(TrainerBase):
         """
         loss_dict = self.model(data)
         losses = sum(loss_dict.values())
-        self._detect_anomaly(losses, loss_dict)
-
-        metrics_dict = loss_dict
-        metrics_dict["data_time"] = data_time
-        self._write_metrics(metrics_dict)
 
         """
-        If you need to accumulate gradients or something similar, you can
+        If you need to accumulate gradients or do something similar, you can
         wrap the optimizer with your custom `zero_grad()` method.
         """
         self.optimizer.zero_grad()
         losses.backward()
 
+        # use a new stream so the ops don't wait for DDP
+        with torch.cuda.stream(
+            torch.cuda.Stream()
+        ) if losses.device.type == "cuda" else _nullcontext():
+            metrics_dict = loss_dict
+            metrics_dict["data_time"] = data_time
+            self._write_metrics(metrics_dict)
+            self._detect_anomaly(losses, loss_dict)
+
         """
         If you need gradient clipping/scaling or other processing, you can
-        wrap the optimizer with your custom `step()` method.
+        wrap the optimizer with your custom `step()` method. But it is
+        suboptimal as explained in https://arxiv.org/abs/2006.15704 Sec 3.2.4
         """
         self.optimizer.step()
 

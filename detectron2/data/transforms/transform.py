@@ -20,7 +20,13 @@ except ImportError:
     # OpenCV is an optional dependency at the moment
     pass
 
-__all__ = ["ExtentTransform", "ResizeTransform", "RotationTransform"]
+__all__ = [
+    "ExtentTransform",
+    "ResizeTransform",
+    "RotationTransform",
+    "ColorTransform",
+    "PILColorTransform",
+]
 
 
 class ExtentTransform(Transform):
@@ -103,6 +109,8 @@ class ResizeTransform(Transform):
             ret = np.asarray(pil_image)
         else:
             # PIL only supports uint8
+            if any(x < 0 for x in img.strides):
+                img = np.ascontiguousarray(img)
             img = torch.from_numpy(img)
             shape = list(img.shape)
             shape_4d = shape[:2] + [1] * (4 - len(shape)) + shape[2:]
@@ -216,6 +224,63 @@ class RotationTransform(Transform):
         return TransformList([rotation, crop])
 
 
+class ColorTransform(Transform):
+    """
+    Generic wrapper for any photometric transforms.
+    These transformations should only affect the color space and
+        not the coordinate space of the image (e.g. annotation
+        coordinates such as bounding boxes should not be changed)
+    """
+
+    def __init__(self, op):
+        """
+        Args:
+            op (Callable): operation to be applied to the image,
+                which takes in an ndarray and returns an ndarray.
+        """
+        if not callable(op):
+            raise ValueError("op parameter should be callable")
+        super().__init__()
+        self._set_attributes(locals())
+
+    def apply_image(self, img):
+        return self.op(img)
+
+    def apply_coords(self, coords):
+        return coords
+
+    def inverse(self):
+        return NoOpTransform()
+
+    def apply_segmentation(self, segmentation):
+        return segmentation
+
+
+class PILColorTransform(ColorTransform):
+    """
+    Generic wrapper for PIL Photometric image transforms,
+        which affect the color space and not the coordinate
+        space of the image
+    """
+
+    def __init__(self, op):
+        """
+        Args:
+            op (Callable): operation to be applied to the image,
+                which takes in a PIL Image and returns a transformed
+                PIL Image.
+                For reference on possible operations see:
+                - https://pillow.readthedocs.io/en/stable/
+        """
+        if not callable(op):
+            raise ValueError("op parameter should be callable")
+        super().__init__(op)
+
+    def apply_image(self, img):
+        img = Image.fromarray(img)
+        return np.asarray(super().apply_image(img))
+
+
 def HFlip_rotated_box(transform, rotated_boxes):
     """
     Apply the horizontal flip transform on rotated boxes.
@@ -257,5 +322,7 @@ def Resize_rotated_box(transform, rotated_boxes):
 
 
 HFlipTransform.register_type("rotated_box", HFlip_rotated_box)
-NoOpTransform.register_type("rotated_box", lambda t, x: x)
 ResizeTransform.register_type("rotated_box", Resize_rotated_box)
+
+# not necessary any more with latest fvcore
+NoOpTransform.register_type("rotated_box", lambda t, x: x)

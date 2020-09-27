@@ -57,6 +57,9 @@ _C.INPUT.MAX_SIZE_TRAIN = 1333
 _C.INPUT.MIN_SIZE_TEST = 800
 # Maximum size of the side of the image during testing
 _C.INPUT.MAX_SIZE_TEST = 1333
+# Mode for flipping images used in data augmentation during training
+# choose one of ["horizontal, "vertical", "none"]
+_C.INPUT.RANDOM_FLIP = "horizontal"
 
 # `True` if cropping is used for data augmentation during training
 _C.INPUT.CROP = CN({"ENABLED": False})
@@ -65,6 +68,8 @@ _C.INPUT.CROP = CN({"ENABLED": False})
 # - "relative_range" uniformly sample relative crop size from between [CROP.SIZE[0], [CROP.SIZE[1]].
 #   and  [1, 1] and use it as in "relative" scenario.
 # - "absolute" crop part of an input with absolute size: (CROP.SIZE[0], CROP.SIZE[1]).
+# - "absolute_range", for an input of size (H, W), uniformly sample H_crop in
+#   [CROP.SIZE[0], min(H, CROP.SIZE[1])] and W_crop in [CROP.SIZE[0], min(W, CROP.SIZE[1])]
 _C.INPUT.CROP.TYPE = "relative_range"
 # Size of crop in range (0, 1] if CROP.TYPE is "relative" or "relative_range" and in number of
 # pixels if CROP.TYPE is "absolute"
@@ -115,8 +120,8 @@ _C.DATALOADER.ASPECT_RATIO_GROUPING = True
 _C.DATALOADER.SAMPLER_TRAIN = "TrainingSampler"
 # Repeat threshold for RepeatFactorTrainingSampler
 _C.DATALOADER.REPEAT_THRESHOLD = 0.0
-# if True, the dataloader will filter out images that have no associated
-# annotations at train time.
+# Tf True, when working on datasets that have instance annotations, the
+# training dataloader will filter out images without associated annotations
 _C.DATALOADER.FILTER_EMPTY_ANNOTATIONS = True
 
 # ---------------------------------------------------------------------------- #
@@ -210,10 +215,13 @@ _C.MODEL.RPN.BOUNDARY_THRESH = -1
 # are ignored (-1)
 _C.MODEL.RPN.IOU_THRESHOLDS = [0.3, 0.7]
 _C.MODEL.RPN.IOU_LABELS = [0, -1, 1]
-# Total number of RPN examples per image
+# Number of regions per image used to train RPN
 _C.MODEL.RPN.BATCH_SIZE_PER_IMAGE = 256
 # Target fraction of foreground (positive) examples per RPN minibatch
 _C.MODEL.RPN.POSITIVE_FRACTION = 0.5
+# Options are: "smooth_l1", "giou"
+_C.MODEL.RPN.BBOX_REG_LOSS_TYPE = "smooth_l1"
+_C.MODEL.RPN.BBOX_REG_LOSS_WEIGHT = 1.0
 # Weights on (dx, dy, dw, dh) for normalizing RPN anchor regression targets
 _C.MODEL.RPN.BBOX_REG_WEIGHTS = (1.0, 1.0, 1.0, 1.0)
 # The transition point from L1 to L2 loss. Set to 0.0 to make the loss simply L1.
@@ -455,6 +463,7 @@ _C.MODEL.RETINANET.PRIOR_PROB = 0.01
 # Inference cls score threshold, only anchors with score > INFERENCE_TH are
 # considered for inference (to improve speed)
 _C.MODEL.RETINANET.SCORE_THRESH_TEST = 0.05
+# Select topk candidates before NMS
 _C.MODEL.RETINANET.TOPK_CANDIDATES_TEST = 1000
 _C.MODEL.RETINANET.NMS_THRESH_TEST = 0.5
 
@@ -465,6 +474,12 @@ _C.MODEL.RETINANET.BBOX_REG_WEIGHTS = (1.0, 1.0, 1.0, 1.0)
 _C.MODEL.RETINANET.FOCAL_LOSS_GAMMA = 2.0
 _C.MODEL.RETINANET.FOCAL_LOSS_ALPHA = 0.25
 _C.MODEL.RETINANET.SMOOTH_L1_LOSS_BETA = 0.1
+# Options are: "smooth_l1", "giou"
+_C.MODEL.RETINANET.BBOX_REG_LOSS_TYPE = "smooth_l1"
+
+# One of BN, SyncBN, FrozenBN, GN
+# Only supports GN until unshared norm is implemented
+_C.MODEL.RETINANET.NORM = ""
 
 
 # ---------------------------------------------------------------------------- #
@@ -544,7 +559,15 @@ _C.SOLVER.CHECKPOINT_PERIOD = 5000
 # Number of images per batch across all machines.
 # If we have 16 GPUs and IMS_PER_BATCH = 32,
 # each GPU will see 2 images per batch.
+# May be adjusted automatically if REFERENCE_WORLD_SIZE is set.
 _C.SOLVER.IMS_PER_BATCH = 16
+
+# The reference number of workers (GPUs) this config is meant to train with.
+# With a non-zero value, it will be used by DefaultTrainer to compute a desired
+# per-worker batch size, and then scale the other related configs (total batch size,
+# learning rate, etc) to match the per-worker batch size if the actual number
+# of workers during training is different from this reference.
+_C.SOLVER.REFERENCE_WORLD_SIZE = 0
 
 # Detectron v1 (and previous detection code) used a 2x higher LR and 0 WD for
 # biases. This is not useful (at least for recent models). You should avoid
@@ -578,8 +601,8 @@ _C.TEST.EXPECTED_RESULTS = []
 # Set to 0 to disable.
 _C.TEST.EVAL_PERIOD = 0
 # The sigmas used to calculate keypoint OKS. See http://cocodataset.org/#keypoints-eval
-# When empty it will use the defaults in COCO.
-# Otherwise it should have the same length as ROI_KEYPOINT_HEAD.NUM_KEYPOINTS.
+# When empty, it will use the defaults in COCO.
+# Otherwise it should be a list[float] with the same length as ROI_KEYPOINT_HEAD.NUM_KEYPOINTS.
 _C.TEST.KEYPOINT_OKS_SIGMAS = []
 # Maximum number of detections to return per image during inference (100 is
 # based on the limit established for the COCO dataset).
