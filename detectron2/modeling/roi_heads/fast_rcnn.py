@@ -597,7 +597,8 @@ class FastRCNNOutputs:
         reg_loss = self.cfg.MODEL.ROI_BOX_HEAD.LOSS
 
         if reg_loss == "diou":
-            # losses_dict["loss_box_reg"] = self.compute_diou()
+            losses_dict["loss_box_reg"] = self.compute_diou()
+        elif reg_loss == "diou_bbox":
             losses_dict["loss_box_reg"] = self.compute_diou_fvcore()
         elif reg_loss == "ciou":
             losses_dict["loss_box_reg"] = self.compute_ciou()
