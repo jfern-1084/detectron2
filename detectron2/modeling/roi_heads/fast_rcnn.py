@@ -372,11 +372,11 @@ class FastRCNNOutputs:
         c = 0
         d = 0
         # if self.cfg.MODEL.ROI_BOX_HEAD.LOSS_BOX_WEIGHT == 10:
-        #     c = ((xc2 - xc1) ** 2) + ((yc2 - yc1) ** 2) + eps
-        #     d = ((x_p - x_g) ** 2) + ((y_p - y_g) ** 2)
+        c = ((xc2 - xc1) ** 2) + ((yc2 - yc1) ** 2) + eps
+        d = ((x_p - x_g) ** 2) + ((y_p - y_g) ** 2)
         # else:
-        c = torch.sqrt(((xc2 - xc1) ** 2) + ((yc2 - yc1) ** 2) + eps)
-        d = torch.sqrt(((x_p - x_g) ** 2) + ((y_p - y_g) ** 2))
+        # c = torch.sqrt(((xc2 - xc1) ** 2) + ((yc2 - yc1) ** 2) + eps)
+        # d = torch.sqrt(((x_p - x_g) ** 2) + ((y_p - y_g) ** 2))
 
         u = d / c
         diouk = iouk - u
