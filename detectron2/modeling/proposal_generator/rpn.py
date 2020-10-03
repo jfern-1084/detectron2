@@ -384,7 +384,6 @@ class RPN(nn.Module):
                 pred_proposals[pos_mask], cat(gt_boxes)[pos_mask], reduction="sum"
             )
         elif self.box_reg_loss_type == "diou":
-            print("Here in rpn")
             anchors = type(anchors[0]).cat(anchors).tensor  # Ax(4 or 5)
             gt_anchor_deltas = [self.box2box_transform.get_deltas(anchors, k) for k in gt_boxes]
             gt_anchor_deltas = torch.stack(gt_anchor_deltas)  # (N, sum(Hi*Wi*Ai), 4 or 5)
@@ -393,6 +392,15 @@ class RPN(nn.Module):
                 gt_anchor_deltas[pos_mask],
                 self.box2box_transform.weights,
                 self.box2box_transform.scale_clamp
+            )
+        elif self.box_reg_loss_type == "diou_bbox":
+            print("Here in rpn : diou_bbox")
+            pred_proposals = self._decode_proposals(anchors, pred_anchor_deltas)
+            pred_proposals = cat(pred_proposals, dim=1)
+            pred_proposals = pred_proposals.view(-1, pred_proposals.shape[-1])
+            pos_mask = pos_mask.view(-1)
+            localization_loss = giou_loss(
+                pred_proposals[pos_mask], cat(gt_boxes)[pos_mask]
             )
         else:
             raise ValueError(f"Invalid rpn box reg loss type '{self.box_reg_loss_type}'")

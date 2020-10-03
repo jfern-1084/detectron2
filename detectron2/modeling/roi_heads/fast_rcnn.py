@@ -306,7 +306,6 @@ class FastRCNNOutputs:
                 reduction="sum",
             )
         elif self.box_reg_loss_type == "diou":
-            print("Here in fast_rcnn")
             gt_proposal_deltas = self.box2box_transform.get_deltas(
                 self.proposals.tensor, self.gt_boxes.tensor
             )
@@ -315,6 +314,12 @@ class FastRCNNOutputs:
                 gt_proposal_deltas[fg_inds],
                 self.box2box_transform.weights,
                 self.box2box_transform.scale_clamp
+            )
+        elif self.box_reg_loss_type == "diou_bbox":
+            print("Here in fast_rcnn : diou_bbox")
+            loss_box_reg = giou_loss(
+                self._predict_boxes()[fg_inds[:, None], gt_class_cols],
+                self.gt_boxes.tensor[fg_inds]
             )
         else:
             raise ValueError(f"Invalid bbox reg loss type '{self.box_reg_loss_type}'")
