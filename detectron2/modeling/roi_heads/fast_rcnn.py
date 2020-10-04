@@ -316,7 +316,6 @@ class FastRCNNOutputs:
                 self.box2box_transform.scale_clamp
             )
         elif self.box_reg_loss_type == "diou_bbox":
-            print("Here in fast_rcnn : diou_bbox")
             loss_box_reg = giou_loss(
                 self._predict_boxes()[fg_inds[:, None], gt_class_cols],
                 self.gt_boxes.tensor[fg_inds]

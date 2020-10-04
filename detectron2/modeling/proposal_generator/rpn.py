@@ -394,7 +394,6 @@ class RPN(nn.Module):
                 self.box2box_transform.scale_clamp
             )
         elif self.box_reg_loss_type == "diou_bbox":
-            print("Here in rpn : diou_bbox")
             pred_proposals = self._decode_proposals(anchors, pred_anchor_deltas)
             pred_proposals = cat(pred_proposals, dim=1)
             pred_proposals = pred_proposals.view(-1, pred_proposals.shape[-1])
