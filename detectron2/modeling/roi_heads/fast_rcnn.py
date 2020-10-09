@@ -14,7 +14,7 @@ from fvcore.nn import giou_loss, smooth_l1_loss
 
 from torch import nn
 from torch.nn import functional as F
-from detectron2.utils.losses import compute_diou, compute_diou_mmdet
+from detectron2.utils.losses import compute_diou, compute_diou_mmdet, compute_ciou_mmdet
 
 from detectron2.config import configurable
 from detectron2.layers import Linear, ShapeSpec, batched_nms, cat, nonzero_tuple
@@ -315,13 +315,13 @@ class FastRCNNOutputs:
                 self.box2box_transform.weights,
                 self.box2box_transform.scale_clamp
             )
-        # elif self.box_reg_loss_type == "diou_bbox":
-        #     loss_box_reg = giou_loss(
-        #         self._predict_boxes()[fg_inds[:, None], gt_class_cols],
-        #         self.gt_boxes.tensor[fg_inds]
-        #     )
         elif self.box_reg_loss_type == "diou_mmdet":
             loss_box_reg = compute_diou_mmdet(
+                self._predict_boxes()[fg_inds[:, None], gt_class_cols],
+                self.gt_boxes.tensor[fg_inds]
+            )
+        elif self.box_reg_loss_type == "ciou_mmdet":
+            loss_box_reg = compute_ciou_mmdet(
                 self._predict_boxes()[fg_inds[:, None], gt_class_cols],
                 self.gt_boxes.tensor[fg_inds]
             )

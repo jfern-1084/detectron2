@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import torch
 import torch.nn.functional as F
 from fvcore.nn import giou_loss, smooth_l1_loss
-from detectron2.utils.losses import compute_diou, compute_diou_mmdet
+from detectron2.utils.losses import compute_diou, compute_diou_mmdet, compute_ciou_mmdet
 from torch import nn
 
 from detectron2.config import configurable
@@ -407,6 +407,14 @@ class RPN(nn.Module):
             pred_proposals = pred_proposals.view(-1, pred_proposals.shape[-1])
             pos_mask = pos_mask.view(-1)
             localization_loss = compute_diou_mmdet(
+                pred_proposals[pos_mask], cat(gt_boxes)[pos_mask]
+            )
+        elif self.box_reg_loss_type == "ciou_mmdet":
+            pred_proposals = self._decode_proposals(anchors, pred_anchor_deltas)
+            pred_proposals = cat(pred_proposals, dim=1)
+            pred_proposals = pred_proposals.view(-1, pred_proposals.shape[-1])
+            pos_mask = pos_mask.view(-1)
+            localization_loss = compute_ciou_mmdet(
                 pred_proposals[pos_mask], cat(gt_boxes)[pos_mask]
             )
         else:

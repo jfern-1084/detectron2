@@ -38,7 +38,7 @@ class COCOEvaluator(DatasetEvaluator):
     instance segmentation, or keypoint detection dataset.
     """
 
-    def __init__(self, dataset_name, cfg, distributed, output_dir=None, result_df=None, *, use_fast_impl=True):
+    def __init__(self, dataset_name, cfg, distributed, output_dir=None, result_df=None, output_file=None, *, use_fast_impl=True):
         """
         Args:
             dataset_name (str): name of the dataset to be evaluated.
@@ -96,6 +96,8 @@ class COCOEvaluator(DatasetEvaluator):
         self.result_df = None
         if len(result_df) == 0:
             self.result_df = result_df
+
+        self._output_file = output_file
 
     def reset(self):
         self._predictions = []
@@ -183,7 +185,9 @@ class COCOEvaluator(DatasetEvaluator):
                 result["category_id"] = reverse_id_mapping[category_id]
 
         if self._output_dir:
-            file_path = os.path.join(self._output_dir, "coco_instances_results.json")
+            #Changed by Johan on 09/10/2020
+            #Original file saved was: "coco_instances_results.json"
+            file_path = os.path.join(self._output_dir, self._output_file )
             self._logger.info("Saving results to {}".format(file_path))
             with PathManager.open(file_path, "w") as f:
                 f.write(json.dumps(coco_results))
