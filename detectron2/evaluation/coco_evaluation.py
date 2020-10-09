@@ -25,6 +25,7 @@ from detectron2.utils.logger import create_small_table
 
 from .evaluator import DatasetEvaluator
 
+from .custom_coco_summarize import Summarize
 
 class COCOEvaluator(DatasetEvaluator):
     """
@@ -37,7 +38,7 @@ class COCOEvaluator(DatasetEvaluator):
     instance segmentation, or keypoint detection dataset.
     """
 
-    def __init__(self, dataset_name, cfg, distributed, output_dir=None, *, use_fast_impl=True):
+    def __init__(self, dataset_name, cfg, distributed, output_dir=None, result_df=None, *, use_fast_impl=True):
         """
         Args:
             dataset_name (str): name of the dataset to be evaluated.
@@ -90,6 +91,11 @@ class COCOEvaluator(DatasetEvaluator):
         # Test set json files do not contain annotations (evaluation must be
         # performed using the COCO evaluation server).
         self._do_evaluation = "annotations" in self._coco_api.dataset
+
+        #Changed made by Johan to store all results
+        self.result_df = None
+        if result_df:
+            self.result_df = result_df
 
     def reset(self):
         self._predictions = []
@@ -200,6 +206,7 @@ class COCOEvaluator(DatasetEvaluator):
                     task,
                     kpt_oks_sigmas=self._kpt_oks_sigmas,
                     use_fast_impl=self._use_fast_impl,
+                    result_df=self.result_df
                 )
                 if len(coco_results) > 0
                 else None  # cocoapi does not handle empty results very well
@@ -494,7 +501,7 @@ def _evaluate_box_proposals(dataset_predictions, coco_api, thresholds=None, area
 
 
 def _evaluate_predictions_on_coco(
-    coco_gt, coco_results, iou_type, kpt_oks_sigmas=None, use_fast_impl=True
+    coco_gt, coco_results, iou_type, kpt_oks_sigmas=None, use_fast_impl=True, result_df=None
 ):
     """
     Evaluate the coco results using COCOEval API.
@@ -534,5 +541,12 @@ def _evaluate_predictions_on_coco(
     coco_eval.evaluate()
     coco_eval.accumulate()
     coco_eval.summarize()
+
+    if result_df:
+        summary = Summarize(coco_eval.stats, coco_eval.params, coco_eval.eval)
+        #Returns an array of size 20
+        summary_dets = summary.summarizeDets()
+
+        result_df.loc[len(result_df)] = summary_dets
 
     return coco_eval
