@@ -542,11 +542,11 @@ def _evaluate_predictions_on_coco(
     coco_eval.accumulate()
     coco_eval.summarize()
 
-    if result_df:
-        summary = Summarize(coco_eval.stats, coco_eval.params, coco_eval.eval)
-        #Returns an array of size 20
-        summary_dets = summary.summarizeDets()
+    #For result_df
+    summary = Summarize(coco_eval.stats, coco_eval.params, coco_eval.eval)
+    #Returns an array of size 20
+    summary_dets = summary.summarizeDets()
 
-        result_df.loc[len(result_df)] = summary_dets
+    result_df.loc[len(result_df)] = summary_dets
 
     return coco_eval
