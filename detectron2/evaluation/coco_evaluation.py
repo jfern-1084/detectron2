@@ -94,7 +94,7 @@ class COCOEvaluator(DatasetEvaluator):
 
         #Changed made by Johan to store all results
         self.result_df = None
-        if result_df:
+        if len(result_df) == 0:
             self.result_df = result_df
 
     def reset(self):
