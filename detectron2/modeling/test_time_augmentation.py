@@ -1,4 +1,4 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 import copy
 import numpy as np
 from contextlib import contextmanager
@@ -178,7 +178,7 @@ class GeneralizedRCNNWithTTA(nn.Module):
             ret = copy.copy(dataset_dict)
             if "image" not in ret:
                 image = read_image(ret.pop("file_name"), self.tta_mapper.image_format)
-                image = torch.from_numpy(image).permute(2, 0, 1)  # CHW
+                image = torch.from_numpy(np.ascontiguousarray(image.transpose(2, 0, 1)))  # CHW
                 ret["image"] = image
             if "height" not in ret and "width" not in ret:
                 ret["height"] = image.shape[1]

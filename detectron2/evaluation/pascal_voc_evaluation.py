@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 
 import logging
 import numpy as np
@@ -9,10 +9,10 @@ import xml.etree.ElementTree as ET
 from collections import OrderedDict, defaultdict
 from functools import lru_cache
 import torch
-from fvcore.common.file_io import PathManager
 
 from detectron2.data import MetadataCatalog
 from detectron2.utils import comm
+from detectron2.utils.file_io import PathManager
 
 from .evaluator import DatasetEvaluator
 

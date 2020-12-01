@@ -1,8 +1,8 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 import inspect
 import logging
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 import torch
 from torch import nn
 
@@ -535,6 +535,7 @@ class StandardROIHeads(ROIHeads):
             self.mask_in_features = mask_in_features
             self.mask_pooler = mask_pooler
             self.mask_head = mask_head
+
         self.keypoint_on = keypoint_in_features is not None
         if self.keypoint_on:
             self.keypoint_in_features = keypoint_in_features
@@ -677,7 +678,7 @@ class StandardROIHeads(ROIHeads):
         """
         del images
         if self.training:
-            assert targets
+            assert targets, "'targets' argument is required during training"
             proposals = self.label_and_sample_proposals(proposals, targets)
         del targets
 
@@ -723,9 +724,7 @@ class StandardROIHeads(ROIHeads):
         instances = self._forward_keypoint(features, instances)
         return instances
 
-    def _forward_box(
-        self, features: Dict[str, torch.Tensor], proposals: List[Instances]
-    ) -> Union[Dict[str, torch.Tensor], List[Instances]]:
+    def _forward_box(self, features: Dict[str, torch.Tensor], proposals: List[Instances]):
         """
         Forward logic of the box prediction branch. If `self.train_on_pred_boxes is True`,
             the function puts predicted boxes in the `proposal_boxes` field of `proposals` argument.
@@ -763,9 +762,7 @@ class StandardROIHeads(ROIHeads):
             pred_instances, _ = self.box_predictor.inference(predictions, proposals)
             return pred_instances
 
-    def _forward_mask(
-        self, features: Dict[str, torch.Tensor], instances: List[Instances]
-    ) -> Union[Dict[str, torch.Tensor], List[Instances]]:
+    def _forward_mask(self, features: Dict[str, torch.Tensor], instances: List[Instances]):
         """
         Forward logic of the mask prediction branch.
 
@@ -781,7 +778,11 @@ class StandardROIHeads(ROIHeads):
             In inference, update `instances` with new fields "pred_masks" and return it.
         """
         if not self.mask_on:
-            return {} if self.training else instances
+            # https://github.com/pytorch/pytorch/issues/43942
+            if self.training:
+                return {}
+            else:
+                return instances
 
         if self.training:
             # head is only trained on positive proposals.
@@ -792,12 +793,11 @@ class StandardROIHeads(ROIHeads):
             boxes = [x.proposal_boxes if self.training else x.pred_boxes for x in instances]
             features = self.mask_pooler(features, boxes)
         else:
-            features = {f: features[f] for f in self.mask_in_features}
+            # https://github.com/pytorch/pytorch/issues/41448
+            features = dict([(f, features[f]) for f in self.mask_in_features])
         return self.mask_head(features, instances)
 
-    def _forward_keypoint(
-        self, features: Dict[str, torch.Tensor], instances: List[Instances]
-    ) -> Union[Dict[str, torch.Tensor], List[Instances]]:
+    def _forward_keypoint(self, features: Dict[str, torch.Tensor], instances: List[Instances]):
         """
         Forward logic of the keypoint prediction branch.
 
@@ -813,7 +813,10 @@ class StandardROIHeads(ROIHeads):
             In inference, update `instances` with new fields "pred_keypoints" and return it.
         """
         if not self.keypoint_on:
-            return {} if self.training else instances
+            if self.training:
+                return {}
+            else:
+                return instances
 
         if self.training:
             # head is only trained on positive proposals with >=1 visible keypoints.
@@ -825,5 +828,5 @@ class StandardROIHeads(ROIHeads):
             boxes = [x.proposal_boxes if self.training else x.pred_boxes for x in instances]
             features = self.keypoint_pooler(features, boxes)
         else:
-            features = {f: features[f] for f in self.keypoint_in_features}
+            features = dict([(f, features[f]) for f in self.keypoint_in_features])
         return self.keypoint_head(features, instances)

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 
 import datetime
 import itertools
@@ -10,13 +10,13 @@ import time
 from collections import Counter
 import torch
 from fvcore.common.checkpoint import PeriodicCheckpointer as _PeriodicCheckpointer
-from fvcore.common.file_io import PathManager
 from fvcore.common.timer import Timer
 from fvcore.nn.precise_bn import get_bn_modules, update_bn_stats
 
 import detectron2.utils.comm as comm
 from detectron2.evaluation.testing import flatten_results_dict
 from detectron2.utils.events import EventStorage, EventWriter
+from detectron2.utils.file_io import PathManager
 
 from .train_loop import HookBase
 
@@ -203,30 +203,33 @@ class LRScheduler(HookBase):
     It is executed after every iteration.
     """
 
-    def __init__(self, optimizer, scheduler):
+    def __init__(self, optimizer=None, scheduler=None):
         """
         Args:
-            optimizer (torch.optim.Optimizer):
-            scheduler (torch.optim._LRScheduler)
+            No args needed. Will obtain optimizer and scheduler from trainer.
         """
         self._optimizer = optimizer
         self._scheduler = scheduler
 
+    def before_train(self):
+        self._optimizer = self._optimizer or self.trainer.optimizer
+        self._scheduler = self._scheduler or self.trainer.scheduler
+
         # NOTE: some heuristics on what LR to summarize
         # summarize the param group with most parameters
-        largest_group = max(len(g["params"]) for g in optimizer.param_groups)
+        largest_group = max(len(g["params"]) for g in self._optimizer.param_groups)
 
         if largest_group == 1:
             # If all groups have one parameter,
             # then find the most common initial LR, and use it for summary
-            lr_count = Counter([g["lr"] for g in optimizer.param_groups])
+            lr_count = Counter([g["lr"] for g in self._optimizer.param_groups])
             lr = lr_count.most_common()[0][0]
-            for i, g in enumerate(optimizer.param_groups):
+            for i, g in enumerate(self._optimizer.param_groups):
                 if g["lr"] == lr:
                     self._best_param_group_id = i
                     break
         else:
-            for i, g in enumerate(optimizer.param_groups):
+            for i, g in enumerate(self._optimizer.param_groups):
                 if len(g["params"]) == largest_group:
                     self._best_param_group_id = i
                     break

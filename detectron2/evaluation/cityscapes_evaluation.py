@@ -1,4 +1,4 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 import glob
 import logging
 import numpy as np
@@ -6,11 +6,11 @@ import os
 import tempfile
 from collections import OrderedDict
 import torch
-from fvcore.common.file_io import PathManager
 from PIL import Image
 
 from detectron2.data import MetadataCatalog
 from detectron2.utils import comm
+from detectron2.utils.file_io import PathManager
 
 from .evaluator import DatasetEvaluator
 

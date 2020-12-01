@@ -1,5 +1,5 @@
 # -*- coding = utf-8 -*-
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 
 from detectron2.config import CfgNode as CN
 
@@ -16,8 +16,7 @@ def add_dataset_category_config(cfg: CN):
 
 
 def add_bootstrap_config(cfg: CN):
-    """
-    """
+    """"""
     _C = cfg
     _C.BOOTSTRAP_DATASETS = []
     _C.BOOTSTRAP_MODEL = CN()
@@ -109,6 +108,19 @@ def add_densepose_head_config(cfg: CN):
     _C.MODEL.ROI_DENSEPOSE_HEAD.DEEPLAB = CN()
     _C.MODEL.ROI_DENSEPOSE_HEAD.DEEPLAB.NORM = "GN"
     _C.MODEL.ROI_DENSEPOSE_HEAD.DEEPLAB.NONLOCAL_ON = 0
+    # Predictor class name, must be registered in DENSEPOSE_PREDICTOR_REGISTRY
+    # Some registered predictors:
+    #   "DensePoseChartPredictor": predicts segmentation and UV coordinates for predefined charts
+    #   "DensePoseChartWithConfidencePredictor": predicts segmentation, UV coordinates
+    #       and associated confidences for predefined charts (default)
+    _C.MODEL.ROI_DENSEPOSE_HEAD.PREDICTOR_NAME = "DensePoseChartWithConfidencePredictor"
+    # Loss class name, must be registered in DENSEPOSE_LOSS_REGISTRY
+    # Some registered losses:
+    #   "DensePoseChartLoss": loss for chart-based models that estimate
+    #      segmentation and UV coordinates
+    #   "DensePoseChartWithConfidenceLoss": loss for chart-based models that estimate
+    #      segmentation, UV coordinates and the corresponding confidences (default)
+    _C.MODEL.ROI_DENSEPOSE_HEAD.LOSS_NAME = "DensePoseChartWithConfidenceLoss"
     # Confidences
     # Enable learning UV confidences (variances) along with the actual values
     _C.MODEL.ROI_DENSEPOSE_HEAD.UV_CONFIDENCE = CN({"ENABLED": False})

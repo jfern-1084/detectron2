@@ -1,4 +1,4 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 from .config import CfgNode as CN
 
 # -----------------------------------------------------------------------------
@@ -563,10 +563,11 @@ _C.SOLVER.CHECKPOINT_PERIOD = 5000
 _C.SOLVER.IMS_PER_BATCH = 16
 
 # The reference number of workers (GPUs) this config is meant to train with.
+# It takes no effect when set to 0.
 # With a non-zero value, it will be used by DefaultTrainer to compute a desired
 # per-worker batch size, and then scale the other related configs (total batch size,
-# learning rate, etc) to match the per-worker batch size if the actual number
-# of workers during training is different from this reference.
+# learning rate, etc) to match the per-worker batch size.
+# See documentation of `DefaultTrainer.auto_scale_workers` for details:
 _C.SOLVER.REFERENCE_WORLD_SIZE = 0
 
 # Detectron v1 (and previous detection code) used a 2x higher LR and 0 WD for
@@ -588,6 +589,11 @@ _C.SOLVER.CLIP_GRADIENTS.CLIP_VALUE = 1.0
 # Floating point number p for L-p norm to be used with the "norm"
 # gradient clipping type; for L-inf, please specify .inf
 _C.SOLVER.CLIP_GRADIENTS.NORM_TYPE = 2.0
+
+# Enable automatic mixed precision for training
+# Note that this does not change model's inference behavior.
+# To use AMP in inference, run inference under autocast()
+_C.SOLVER.AMP = CN({"ENABLED": False})
 
 # ---------------------------------------------------------------------------- #
 # Specific test options

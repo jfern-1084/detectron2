@@ -1,4 +1,4 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 import itertools
 import math
 from collections import defaultdict
@@ -124,7 +124,7 @@ class RepeatFactorTrainingSampler(Sampler):
         rep_factors = []
         for dataset_dict in dataset_dicts:
             cat_ids = {ann["category_id"] for ann in dataset_dict["annotations"]}
-            rep_factor = max({category_rep[cat_id] for cat_id in cat_ids})
+            rep_factor = max({category_rep[cat_id] for cat_id in cat_ids}, default=1.0)
             rep_factors.append(rep_factor)
 
         return torch.tensor(rep_factors, dtype=torch.float32)

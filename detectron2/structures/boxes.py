@@ -1,12 +1,23 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 import math
 import numpy as np
 from enum import IntEnum, unique
-from typing import Any, List, Tuple, Union
+from typing import List, Tuple, Union
 import torch
 from torch import device
 
+from detectron2.utils.env import TORCH_VERSION
+
 _RawBoxType = Union[List[float], Tuple[float, ...], torch.Tensor, np.ndarray]
+
+
+# https://github.com/pytorch/pytorch/issues/47570
+if True or TORCH_VERSION < (1, 8):
+    _maybe_jit_unused = torch.jit.unused
+else:
+
+    def _maybe_jit_unused(x):
+        return x
 
 
 @unique
@@ -166,9 +177,10 @@ class Boxes:
         """
         return Boxes(self.tensor.clone())
 
-    @torch.jit.unused
-    def to(self, *args: Any, **kwargs: Any):
-        return Boxes(self.tensor.to(*args, **kwargs))
+    @_maybe_jit_unused
+    def to(self, device: torch.device = None):  # noqa
+        # Boxes are assumed float32 and does not support to(dtype)
+        return Boxes(self.tensor.to(device=device))
 
     def area(self) -> torch.Tensor:
         """
@@ -212,7 +224,7 @@ class Boxes:
         keep = (widths > threshold) & (heights > threshold)
         return keep
 
-    def __getitem__(self, item):
+    def __getitem__(self, item) -> "Boxes":
         """
         Args:
             item: int, slice, or a BoolTensor
@@ -275,10 +287,8 @@ class Boxes:
         self.tensor[:, 0::2] *= scale_x
         self.tensor[:, 1::2] *= scale_y
 
-    # classmethod not supported by torchscript. TODO try staticmethod
     @classmethod
-    @torch.jit.unused
-    def cat(cls, boxes_list):
+    def cat(cls, boxes_list: List["Boxes"]) -> "Boxes":
         """
         Concatenates a list of Boxes into a single Boxes
 
@@ -288,6 +298,14 @@ class Boxes:
         Returns:
             Boxes: the concatenated Boxes
         """
+        if torch.jit.is_scripting():
+            # https://github.com/pytorch/pytorch/issues/18627
+            # 1. staticmethod can be used in torchscript, But we can not use
+            # `type(boxes).staticmethod` because torchscript only supports function
+            # `type` with input type `torch.Tensor`.
+            # 2. classmethod is not fully supported by torchscript. We explicitly assign
+            # cls to Box as a workaround to get torchscript support.
+            cls = Boxes
         assert isinstance(boxes_list, (list, tuple))
         if len(boxes_list) == 0:
             return cls(torch.empty(0))

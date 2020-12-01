@@ -1,4 +1,4 @@
-// Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
+// Copyright (c) Facebook, Inc. and its affiliates.
 
 #include <opencv2/opencv.hpp>
 #include <iostream>
@@ -10,8 +10,10 @@
 
 using namespace std;
 
-// experimental. don't use
+// experimental.
 int main(int argc, const char* argv[]) {
+  // arguments:
+  //   model.ts input.jpg
   if (argc != 3) {
     return 1;
   }

@@ -4,9 +4,7 @@ instant_test_output
 inference_test_output
 
 
-*.jpg
 *.png
-*.txt
 *.json
 *.diff
 
@@ -39,6 +37,7 @@ wheels/
 # editor settings
 .idea
 .vscode
+_darcs
 
 # project dirs
 /detectron2/model_zoo/configs

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 
 import glob
 import os
@@ -12,7 +12,7 @@ from torch.utils.cpp_extension import CUDA_HOME, CppExtension, CUDAExtension
 from torch.utils.hipify import hipify_python
 
 torch_ver = [int(x) for x in torch.__version__.split(".")[:2]]
-assert torch_ver >= [1, 4], "Requires PyTorch >= 1.4"
+assert torch_ver >= [1, 5], "Requires PyTorch >= 1.5"
 
 
 def get_version():
@@ -45,13 +45,11 @@ def get_extensions():
     main_source = path.join(extensions_dir, "vision.cpp")
     sources = glob.glob(path.join(extensions_dir, "**", "*.cpp"))
 
-    is_rocm_pytorch = False
-    if torch_ver >= [1, 5]:
-        from torch.utils.cpp_extension import ROCM_HOME
+    from torch.utils.cpp_extension import ROCM_HOME
 
-        is_rocm_pytorch = (
-            True if ((torch.version.hip is not None) and (ROCM_HOME is not None)) else False
-        )
+    is_rocm_pytorch = (
+        True if ((torch.version.hip is not None) and (ROCM_HOME is not None)) else False
+    )
 
     if is_rocm_pytorch:
         hipify_python.hipify(
@@ -87,6 +85,11 @@ def get_extensions():
         )
 
     sources = [main_source] + sources
+    sources = [
+        s
+        for s in sources
+        if not is_rocm_pytorch or torch_ver < [1, 7] or not s.endswith("hip/vision.cpp")
+    ]
 
     extension = CppExtension
 
@@ -112,11 +115,11 @@ def get_extensions():
             define_macros += [("WITH_HIP", None)]
             extra_compile_args["nvcc"] = []
 
-        # It's better if pytorch can do this by default ..
-        CC = os.environ.get("CC", None)
-        #Hidden for SOSCIP account. Will check and reactivate soon. Johan
-        # if CC is not None:
-        #     extra_compile_args["nvcc"].append("-ccbin={}".format(CC))
+        if torch_ver < [1, 7]:
+            # supported by https://github.com/pytorch/pytorch/pull/43931
+            CC = os.environ.get("CC", None)
+            # if CC is not None:
+            #     extra_compile_args["nvcc"].append("-ccbin={}".format(CC))
 
     include_dirs = [extensions_dir]
 
@@ -193,11 +196,12 @@ setup(
         "tabulate",
         "cloudpickle",
         "matplotlib",
-        "mock",
         "tqdm>4.29.0",
         "tensorboard",
-        "fvcore>=0.1.1",
+        "fvcore>=0.1.2",
         "pycocotools>=2.0",  #Using my version for now. Will change later. Johan
+        # "fvcore>=0.1.2",
+        # "pycocotools>=2.0.2",  # corresponds to https://github.com/ppwwyyxx/cocoapi
         "future",  # used by caffe2
         "pydot",  # used to save caffe2 SVGs
     ],
@@ -210,7 +214,7 @@ setup(
         "dev": [
             "flake8==3.8.1",
             "isort==4.3.21",
-            "black @ git+https://github.com/psf/black@673327449f86fce558adde153bb6cbe54bfebad2",
+            "black==20.8b1",
             "flake8-bugbear",
             "flake8-comprehensions",
         ],

@@ -1,4 +1,4 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 
 import math
 import torch
@@ -15,7 +15,7 @@ from .shared import alias, to_device
 
 
 """
-This file contains caffe2-compatible implementation of several detectrno2 components.
+This file contains caffe2-compatible implementation of several detectron2 components.
 """
 
 
@@ -56,8 +56,8 @@ class InstancesList(object):
         self.image_size = self.im_info
 
     def get_fields(self):
-        """ like `get_fields` in the Instances object,
-        but return each field in tensor representations """
+        """like `get_fields` in the Instances object,
+        but return each field in tensor representations"""
         ret = {}
         for k, v in self.batch_extra_fields.items():
             # if isinstance(v, torch.Tensor):
@@ -338,6 +338,10 @@ class Caffe2ROIPooler(Caffe2Compatible, poolers.ROIPooler):
             roi_feat_fpn_list.append(roi_feat_fpn)
 
         roi_feat_shuffled = cat(roi_feat_fpn_list, dim=0)
+        assert roi_feat_shuffled.numel() > 0 and rois_idx_restore_int32.numel() > 0, (
+            "Caffe2 export requires tracing with a model checkpoint + input that can produce valid"
+            " detections. But no detections were obtained with the given checkpoint and input!"
+        )
         roi_feat = torch.ops._caffe2.BatchPermutation(roi_feat_shuffled, rois_idx_restore_int32)
         return roi_feat
 
@@ -348,6 +352,7 @@ class Caffe2FastRCNNOutputsInference:
 
     def __call__(self, box_predictor, predictions, proposals):
         """ equivalent to FastRCNNOutputLayers.inference """
+        num_classes = box_predictor.num_classes
         score_thresh = box_predictor.test_score_thresh
         nms_thresh = box_predictor.test_nms_thresh
         topk_per_image = box_predictor.test_topk_per_image
@@ -365,7 +370,14 @@ class Caffe2FastRCNNOutputsInference:
             box2box_transform_weights = box_predictor.box2box_transform.weights
 
         class_logits, box_regression = predictions
-        class_prob = F.softmax(class_logits, -1)
+        if num_classes + 1 == class_logits.shape[1]:
+            class_prob = F.softmax(class_logits, -1)
+        else:
+            assert num_classes == class_logits.shape[1]
+            class_prob = F.sigmoid(class_logits)
+            # BoxWithNMSLimit will infer num_classes from the shape of the class_prob
+            # So append a zero column as placeholder for the background class
+            class_prob = torch.cat((class_prob, torch.zeros(class_prob.shape[0], 1)), dim=1)
 
         assert box_regression.shape[1] % box_dim == 0
         cls_agnostic_bbox_reg = box_regression.shape[1] // box_dim == 1

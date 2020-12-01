@@ -18,7 +18,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install flake8==3.8.1 flake8-bugbear flake8-comprehensions isort==4.3.21
-          python -m pip install 'black @ git+https://github.com/psf/black@673327449f86fce558adde153bb6cbe54bfebad2'
+          python -m pip install black==20.8b1
           flake8 --version
       - name: Lint
         run: |
@@ -35,12 +35,14 @@ jobs:
     if: ${{ github.repository_owner == 'facebookresearch' || github.event_name == 'pull_request' }}
     strategy:
       matrix:
-        torch: [1.5, 1.6]
+        torch: [1.5, 1.6, 1.7]
         include:
           - torch: 1.5
             torchvision: 0.6
           - torch: 1.6
             torchvision: 0.7
+          - torch: 1.7
+            torchvision: 0.8
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -58,7 +60,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install -U pip setuptools==49
+          python -m pip install -U pip
           python -m pip install ninja opencv-python-headless onnx pytest-xdist
           python -m pip install torch==${{matrix.torch}} torchvision==${{matrix.torchvision}} -f https://download.pytorch.org/whl/torch_stable.html
           python -m pip install -U 'git+https://github.com/facebookresearch/fvcore'

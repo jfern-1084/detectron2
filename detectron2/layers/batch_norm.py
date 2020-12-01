@@ -1,4 +1,4 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 import logging
 import torch
 import torch.distributed as dist
@@ -50,7 +50,8 @@ class FrozenBatchNorm2d(nn.Module):
             bias = self.bias - self.running_mean * scale
             scale = scale.reshape(1, -1, 1, 1)
             bias = bias.reshape(1, -1, 1, 1)
-            return x * scale + bias
+            out_dtype = x.dtype  # may be half
+            return x * scale.to(out_dtype) + bias.to(out_dtype)
         else:
             # When gradients are not needed, F.batch_norm is a single fused op
             # and provide more optimization opportunities.
@@ -134,6 +135,8 @@ def get_norm(norm, out_channels):
     Returns:
         nn.Module or None: the normalization layer
     """
+    if norm is None:
+        return None
     if isinstance(norm, str):
         if len(norm) == 0:
             return None

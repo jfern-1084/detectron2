@@ -1,7 +1,8 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 import numpy as np
 from typing import List
 import fvcore.nn.weight_init as weight_init
+import torch
 from torch import nn
 
 from detectron2.config import configurable
@@ -27,8 +28,6 @@ class FastRCNNConvFCHead(nn.Sequential):
     A head with several 3x3 conv layers (each followed by norm & relu) and then
     several fc layers (each followed by relu).
     """
-
-    __ignored_properties__ = ["output_shape"]
 
     @configurable
     def __init__(
@@ -98,6 +97,7 @@ class FastRCNNConvFCHead(nn.Sequential):
         return x
 
     @property
+    @torch.jit.unused
     def output_shape(self):
         """
         Returns:

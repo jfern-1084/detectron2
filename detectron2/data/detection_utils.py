@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 
 """
 Common data processing utilities that are used in a
@@ -9,7 +9,6 @@ import logging
 import numpy as np
 import pycocotools.mask as mask_util
 import torch
-from fvcore.common.file_io import PathManager
 from PIL import Image
 
 from detectron2.structures import (
@@ -22,6 +21,7 @@ from detectron2.structures import (
     RotatedBoxes,
     polygons_to_bitmask,
 )
+from detectron2.utils.file_io import PathManager
 
 from . import transforms as T
 from .catalog import MetadataCatalog
@@ -192,13 +192,14 @@ def check_image_size(dataset_dict, image):
         expected_wh = (dataset_dict["width"], dataset_dict["height"])
         if not image_wh == expected_wh:
             raise SizeMismatchError(
-                "Mismatched (W,H){}, got {}, expect {}".format(
+                "Mismatched image shape{}, got {}, expect {}.".format(
                     " for image " + dataset_dict["file_name"]
                     if "file_name" in dataset_dict
                     else "",
                     image_wh,
                     expected_wh,
                 )
+                + " Please check the width/height in your annotation."
             )
 
     # To ensure bbox always remap to original image size

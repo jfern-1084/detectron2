@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 
 # flake8: noqa
 
@@ -275,6 +275,7 @@ def autodoc_skip_member(app, what, name, obj, skip, options):
         "TransformGen",
         "apply_augmentations",
         "StandardAugInput",
+        "build_batch_data_loader",
     }
     try:
         if obj.__doc__.lower().strip().startswith("deprecated") or name in HIDDEN:
@@ -301,6 +302,11 @@ _PAPER_DATA = {
     "lvis": ("1908.03195", "LVIS: A Dataset for Large Vocabulary Instance Segmentation"),
     "rrpn": ("1703.01086", "Arbitrary-Oriented Scene Text Detection via Rotation Proposals"),
     "imagenet in 1h": ("1706.02677", "Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour"),
+    "xception": ("1610.02357", "Xception: Deep Learning with Depthwise Separable Convolutions"),
+    "mobilenet": (
+        "1704.04861",
+        "MobileNets: Efficient Convolutional Neural Networks for Mobile Vision Applications",
+    ),
 }
 
 

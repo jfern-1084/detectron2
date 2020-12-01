@@ -1,4 +1,4 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 import contextlib
 import io
 import itertools
@@ -8,12 +8,12 @@ import numpy as np
 import os
 import tempfile
 from collections import OrderedDict
-from fvcore.common.file_io import PathManager
 from PIL import Image
 from tabulate import tabulate
 
 from detectron2.data import MetadataCatalog
 from detectron2.utils import comm
+from detectron2.utils.file_io import PathManager
 
 from .evaluator import DatasetEvaluator
 

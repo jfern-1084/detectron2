@@ -1,4 +1,4 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 import logging
 import numpy as np
 import pprint
@@ -39,9 +39,13 @@ def verify_results(cfg, results):
 
     ok = True
     for task, metric, expected, tolerance in expected_results:
-        actual = results[task][metric]
+        actual = results[task].get(metric, None)
+        if actual is None:
+            ok = False
+            continue
         if not np.isfinite(actual):
             ok = False
+            continue
         diff = abs(actual - expected)
         if diff > tolerance:
             ok = False

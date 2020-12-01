@@ -1,4 +1,4 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 # -*- coding: utf-8 -*-
 
 import logging
@@ -23,7 +23,7 @@ ACTIVATIONS_MODE = "activations"
 
 
 # some extra ops to ignore from counting.
-_IGNORED_OPS = [
+_IGNORED_OPS = {
     "aten::add",
     "aten::add_",
     "aten::batch_norm",
@@ -37,8 +37,6 @@ _IGNORED_OPS = [
     "aten::mul",
     "aten::mul_",
     "aten::nonzero_numpy",
-    "aten::relu",
-    "aten::relu_",
     "aten::rsub",
     "aten::sigmoid",
     "aten::sigmoid_",
@@ -48,8 +46,13 @@ _IGNORED_OPS = [
     "aten::sub",
     "aten::upsample_nearest2d",
     "prim::PythonOp",
+<<<<<<< HEAD
     "torchvision::caffe_nms",
 ]
+=======
+    "torchvision::nms",  # TODO estimate flop for nms
+}
+>>>>>>> cd60faf1427f95d357ba30365a415d0309a8618f
 
 
 def flop_count_operators(

@@ -1,4 +1,4 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 from torch import nn
 from torchvision.ops import roi_align as tv_roi_align
 
@@ -104,7 +104,12 @@ class ROIAlign(nn.Module):
         """
         assert rois.dim() == 2 and rois.size(1) == 5
         return roi_align(
-            input, rois, self.output_size, self.spatial_scale, self.sampling_ratio, self.aligned
+            input,
+            rois.to(dtype=input.dtype),
+            self.output_size,
+            self.spatial_scale,
+            self.sampling_ratio,
+            self.aligned,
         )
 
     def __repr__(self):

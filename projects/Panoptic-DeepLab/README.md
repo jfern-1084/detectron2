@@ -10,13 +10,14 @@ Bowen Cheng, Maxwell D. Collins, Yukun Zhu, Ting Liu, Thomas S. Huang, Hartwig A
 
 ## Installation
 Install Detectron2 following [the instructions](https://detectron2.readthedocs.io/tutorials/install.html).
+To use cityscapes, prepare data follow the [tutorial](https://detectron2.readthedocs.io/tutorials/builtin_datasets.html#expected-dataset-structure-for-cityscapes).
 
 ## Training
 
 To train a model with 8 GPUs run:
 ```bash
 cd /path/to/detectron2/projects/Panoptic-DeepLab
-python train_net.py --config-file config/Cityscapes-PanopticSegmentation/panoptic_deeplab_R_52_os16_mg124_poly_90k_bs32_crop_512_1024.yaml --num-gpus 8
+python train_net.py --config-file configs/Cityscapes-PanopticSegmentation/panoptic_deeplab_R_52_os16_mg124_poly_90k_bs32_crop_512_1024.yaml --num-gpus 8
 ```
 
 ## Evaluation
@@ -24,7 +25,7 @@ python train_net.py --config-file config/Cityscapes-PanopticSegmentation/panopti
 Model evaluation can be done similarly:
 ```bash
 cd /path/to/detectron2/projects/Panoptic-DeepLab
-python train_net.py --config-file config/Cityscapes-PanopticSegmentation/panoptic_deeplab_R_52_os16_mg124_poly_90k_bs32_crop_512_1024.yaml --eval-only MODEL.WEIGHTS /path/to/model_checkpoint
+python train_net.py --config-file configs/Cityscapes-PanopticSegmentation/panoptic_deeplab_R_52_os16_mg124_poly_90k_bs32_crop_512_1024.yaml --eval-only MODEL.WEIGHTS /path/to/model_checkpoint
 ```
 
 ## Cityscapes Panoptic Segmentation
@@ -67,7 +68,7 @@ Cityscapes models are trained with ImageNet pretraining.
 <td align="center"> 33.2 </td>
 <td align="center"> 9682 </td>
 <td align="center">  </td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/PanopticDeepLab/Cityscapes-PanopticSegmentation/panoptic_deeplab_R_52_os16_mg124_poly_90k_bs32/model_final_380d9c.pkl
+<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/PanopticDeepLab/Cityscapes-PanopticSegmentation/panoptic_deeplab_R_52_os16_mg124_poly_90k_bs32/model_final_bd324a.pkl
 ">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/PanopticDeepLab/Cityscapes-PanopticSegmentation/panoptic_deeplab_R_52_os16_mg124_poly_90k_bs32/metrics.json
 ">metrics</a></td>
 </tr>
@@ -77,6 +78,9 @@ Note:
 - [R52](https://dl.fbaipublicfiles.com/detectron2/DeepLab/R-52.pkl): a ResNet-50 with its first 7x7 convolution replaced by 3 3x3 convolutions. This modification has been used in most semantic segmentation papers. We pre-train this backbone on ImageNet using the default recipe of [pytorch examples](https://github.com/pytorch/examples/tree/master/imagenet).
 - DC5 means using dilated convolution in `res5`.
 - We use a smaller training crop size (512x1024) than the original paper (1025x2049), we find using larger crop size (1024x2048) could further improve PQ by 1.5% but also degrades AP by 3%.
+- This implementation currently uses a much heavier head than the original paper.
+- This implementation does not include optimized post-processing code needed for deployment. Post-processing the network
+  outputs now takes more time than the network itself.
 
 ## <a name="CitingPanopticDeepLab"></a>Citing Panoptic-DeepLab
 
