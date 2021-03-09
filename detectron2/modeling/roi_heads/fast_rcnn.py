@@ -265,7 +265,8 @@ class FastRCNNOutputs:
         else:
             self._log_accuracy()
             #Added by Johan : hacky way. Will improve if this works
-            class_weight = torch.tensor([5.0,5.0,1.0,1.0])
+            device = self.pred_proposal_deltas.device
+            class_weight = torch.tensor([5.0,5.0,1.0,1.0], device=device)
             return F.cross_entropy(self.pred_class_logits, self.gt_classes, weight=class_weight, reduction="mean")
 
     def box_reg_loss(self):
