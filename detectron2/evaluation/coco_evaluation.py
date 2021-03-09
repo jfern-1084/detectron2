@@ -26,7 +26,7 @@ from detectron2.utils.logger import create_small_table
 
 from .evaluator import DatasetEvaluator
 
-from .custom_coco_summarize import Summarize
+# from .custom_coco_summarize import Summarize
 
 class COCOEvaluator(DatasetEvaluator):
     """
@@ -223,7 +223,8 @@ class COCOEvaluator(DatasetEvaluator):
         if self._output_dir:
             #Changed by Johan on 09/10/2020
             #Original file saved was: "coco_instances_results.json"
-            file_path = os.path.join(self._output_dir, self._output_file )
+            # file_path = os.path.join(self._output_dir, self._output_file )
+            file_path = os.path.join(self._output_dir, "coco_instances_results.json")
             self._logger.info("Saving results to {}".format(file_path))
             with PathManager.open(file_path, "w") as f:
                 f.write(json.dumps(coco_results))
@@ -586,6 +587,7 @@ def _evaluate_predictions_on_coco(
     coco_eval.accumulate()
     coco_eval.summarize()
 
+    # Changed by Johan
     #For result_df
     # summary = Summarize(coco_eval.stats, coco_eval.params, coco_eval.eval)
     #Returns an array of size 20
