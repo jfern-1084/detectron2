@@ -266,8 +266,20 @@ class FastRCNNOutputs:
             self._log_accuracy()
             #Added by Johan : hacky way. Will improve if this works
             device = self.pred_proposal_deltas.device
-            class_weight = torch.tensor([5.0,5.0,1.0,1.0,1.0], device=device)
-            return F.cross_entropy(self.pred_class_logits, self.gt_classes, weight=class_weight, reduction="mean")
+            cross_entropy_loss = 0
+            if self.cross_entropy_weight == "none":
+                cross_entropy_loss = F.cross_entropy(self.pred_class_logits,
+                                                     self.gt_classes,
+                                                     reduction="mean")
+            else:
+                class_weight = torch.tensor(self.cross_entropy_weight, device=device)
+                cross_entropy_loss = F.cross_entropy(self.pred_class_logits,
+                                                     self.gt_classes,
+                                                     weight=class_weight,
+                                                     reduction="mean")
+            return cross_entropy_loss
+            # #original code:
+            # return F.cross_entropy(self.pred_class_logits,self.gt_classes,reduction="mean")
 
     def box_reg_loss(self):
         """
@@ -802,6 +814,7 @@ class FastRCNNOutputLayers(nn.Module):
             "test_topk_per_image"   : cfg.TEST.DETECTIONS_PER_IMAGE,
             "box_reg_loss_type"     : cfg.MODEL.ROI_BOX_HEAD.BBOX_REG_LOSS_TYPE,
             "loss_weight"           : {"loss_box_reg": cfg.MODEL.ROI_BOX_HEAD.BBOX_REG_LOSS_WEIGHT},
+            "cross_entropy_weight"  : cfg.MODEL.ROI_BOX_HEAD.CROSS_ENTROPY_WEIGHT
             # fmt: on
         }
 
