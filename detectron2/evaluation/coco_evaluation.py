@@ -26,7 +26,6 @@ from detectron2.utils.logger import create_small_table
 
 from .evaluator import DatasetEvaluator
 
-# from .custom_coco_summarize import Summarize
 
 class COCOEvaluator(DatasetEvaluator):
     """
@@ -34,12 +33,13 @@ class COCOEvaluator(DatasetEvaluator):
     for keypoint detection outputs using COCO's metrics.
     See http://cocodataset.org/#detection-eval and
     http://cocodataset.org/#keypoints-eval to understand its metrics.
+    The metrics range from 0 to 100 (instead of 0 to 1), where a -1 or NaN means
+    the metric cannot be computed (e.g. due to no predictions made).
 
     In addition to COCO, this evaluator is able to support any bounding box detection,
     instance segmentation, or keypoint detection dataset.
     """
 
-    # def __init__(self, dataset_name, cfg, distributed, output_dir=None, result_df=None, output_file=None, *, use_fast_impl=True):
     def __init__(
         self,
         dataset_name,
@@ -68,10 +68,9 @@ class COCOEvaluator(DatasetEvaluator):
             output_dir (str): optional, an output directory to dump all
                 results predicted on the dataset. The dump contains two files:
 
-                1. "instances_predictions.pth" a file in torch serialization
-                   format that contains all the raw original predictions.
-                2. "coco_instances_results.json" a json file in COCO's result
-                   format.
+                1. "instances_predictions.pth" a file that can be loaded with `torch.load` and
+                   contains all the results in the format they are produced by the model.
+                2. "coco_instances_results.json" a json file in COCO's result format.
             use_fast_impl (bool): use a fast but **unofficial** implementation to compute AP.
                 Although the results should be very close to the official implementation in COCO
                 API, it is still recommended to compute results with the official API for use in
@@ -121,13 +120,6 @@ class COCOEvaluator(DatasetEvaluator):
         if self._do_evaluation:
             self._kpt_oks_sigmas = kpt_oks_sigmas
 
-        # #Changed made by Johan to store all results
-        # self.result_df = None
-        # if len(result_df) == 0:
-        #     self.result_df = result_df
-        #
-        # self._output_file = output_file
-
     def reset(self):
         self._predictions = []
 
@@ -148,7 +140,8 @@ class COCOEvaluator(DatasetEvaluator):
                 prediction["instances"] = instances_to_coco_json(instances, input["image_id"])
             if "proposals" in output:
                 prediction["proposals"] = output["proposals"].to(self._cpu_device)
-            self._predictions.append(prediction)
+            if len(prediction) > 1:
+                self._predictions.append(prediction)
 
     def evaluate(self, img_ids=None):
         """
@@ -221,9 +214,6 @@ class COCOEvaluator(DatasetEvaluator):
                 result["category_id"] = reverse_id_mapping[category_id]
 
         if self._output_dir:
-            #Changed by Johan on 09/10/2020
-            #Original file saved was: "coco_instances_results.json"
-            # file_path = os.path.join(self._output_dir, self._output_file )
             file_path = os.path.join(self._output_dir, "coco_instances_results.json")
             self._logger.info("Saving results to {}".format(file_path))
             with PathManager.open(file_path, "w") as f:
@@ -240,6 +230,7 @@ class COCOEvaluator(DatasetEvaluator):
             )
         )
         for task in sorted(tasks):
+            assert task in {"bbox", "segm", "keypoints"}, f"Got unknown task: {task}!"
             coco_eval = (
                 _evaluate_predictions_on_coco(
                     self._coco_api,
@@ -247,7 +238,6 @@ class COCOEvaluator(DatasetEvaluator):
                     task,
                     kpt_oks_sigmas=self._kpt_oks_sigmas,
                     use_fast_impl=self._use_fast_impl,
-                    # result_df=self.result_df
                     img_ids=img_ids,
                 )
                 if len(coco_results) > 0
@@ -543,7 +533,6 @@ def _evaluate_box_proposals(dataset_predictions, coco_api, thresholds=None, area
 
 
 def _evaluate_predictions_on_coco(
-    # coco_gt, coco_results, iou_type, kpt_oks_sigmas=None, use_fast_impl=True, result_df=None
     coco_gt, coco_results, iou_type, kpt_oks_sigmas=None, use_fast_impl=True, img_ids=None
 ):
     """
@@ -586,13 +575,5 @@ def _evaluate_predictions_on_coco(
     coco_eval.evaluate()
     coco_eval.accumulate()
     coco_eval.summarize()
-
-    # Changed by Johan
-    #For result_df
-    # summary = Summarize(coco_eval.stats, coco_eval.params, coco_eval.eval)
-    #Returns an array of size 20
-    # summary_dets = summary.summarizeDets()
-
-    # result_df.loc[len(result_df)] = summary_dets
 
     return coco_eval

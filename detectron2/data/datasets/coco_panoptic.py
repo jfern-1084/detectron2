@@ -47,9 +47,7 @@ def load_coco_panoptic_json(json_file, image_dir, gt_dir, meta):
         # to make image extension a user-provided argument if we extend this
         # function to support other COCO-like datasets.
         image_file = os.path.join(image_dir, os.path.splitext(ann["file_name"])[0] + ".jpg")
-        assert PathManager.isfile(image_file), image_file
         label_file = os.path.join(gt_dir, ann["file_name"])
-        assert PathManager.isfile(label_file), label_file
         segments_info = [_convert_category_id(x, meta) for x in ann["segments_info"]]
         ret.append(
             {
@@ -60,6 +58,7 @@ def load_coco_panoptic_json(json_file, image_dir, gt_dir, meta):
             }
         )
     assert len(ret), f"No images found in {image_dir}!"
+    assert PathManager.isfile(ret[0]["file_name"]), ret[0]["file_name"]
     assert PathManager.isfile(ret[0]["pan_seg_file_name"]), ret[0]["pan_seg_file_name"]
     return ret
 
@@ -77,8 +76,8 @@ def register_coco_panoptic(
             e.g. "coco_2017_train_panoptic"
         metadata (dict): extra metadata associated with this dataset.
         image_root (str): directory which contains all the images
-        panoptic_root (str): directory which contains panoptic annotation images
-        panoptic_json (str): path to the json panoptic annotation file
+        panoptic_root (str): directory which contains panoptic annotation images in COCO format
+        panoptic_json (str): path to the json panoptic annotation file in COCO format
         sem_seg_root (none): not used, to be consistent with
             `register_coco_panoptic_separated`.
         instances_json (str): path to the json instance annotation file

@@ -150,6 +150,10 @@ class GenericMask:
 
 
 class _PanopticPrediction:
+    """
+    Unify different panoptic annotation/prediction formats
+    """
+
     def __init__(self, panoptic_seg, segments_info, metadata=None):
         if segments_info is None:
             assert metadata is not None
@@ -220,24 +224,30 @@ class _PanopticPrediction:
                 yield mask, sinfo
 
 
-def _create_text_labels(classes, scores, class_names):
+def _create_text_labels(classes, scores, class_names, is_crowd=None):
     """
     Args:
         classes (list[int] or None):
         scores (list[float] or None):
         class_names (list[str] or None):
+        is_crowd (list[bool] or None):
 
     Returns:
         list[str] or None
     """
     labels = None
-    if classes is not None and class_names is not None and len(class_names) > 0:
-        labels = [class_names[i] for i in classes]
+    if classes is not None:
+        if class_names is not None and len(class_names) > 0:
+            labels = [class_names[i] for i in classes]
+        else:
+            labels = [str(i) for i in classes]
     if scores is not None:
         if labels is None:
             labels = ["{:.0f}%".format(s * 100) for s in scores]
         else:
             labels = ["{} {:.0f}%".format(l, s * 100) for l, s in zip(labels, scores)]
+    if labels is not None and is_crowd is not None:
+        labels = [l + ("|crowd" if crowd else "") for l, crowd in zip(labels, is_crowd)]
     return labels
 
 
@@ -323,11 +333,11 @@ class Visualizer:
     of objects themselves (e.g. when the object is too small) may change according
     to different heuristics, as long as the results still look visually reasonable.
 
-    To obtain a consistent style, you can implement custom drawing functions with the primitive
-    methods instead. If you need more customized visualization styles, you can process the data
-    yourself following their format documented in tutorials (:doc:`/tutorials/models`,
-    :doc`/tutorials/datasets`). This class does not intend to satisfy everyone's preference on
-    drawing styles.
+    To obtain a consistent style, you can implement custom drawing functions with the
+    abovementioned primitive methods instead. If you need more customized visualization
+    styles, you can process the data yourself following their format documented in
+    tutorials (:doc:`/tutorials/models`, :doc:`/tutorials/datasets`). This class does not
+    intend to satisfy everyone's preference on drawing styles.
 
     This visualizer focuses on high rendering quality rather than performance. It is not
     designed to be used for real-time applications.
@@ -343,7 +353,7 @@ class Visualizer:
                 color channels. The image is required to be in RGB format since that
                 is a requirement of the Matplotlib library. The image is also expected
                 to be in the range [0, 255].
-            metadata (Metadata): image metadata.
+            metadata (Metadata): dataset metadata (e.g. class names and colors)
             instance_mode (ColorMode): defines one of the pre-defined style for drawing
                 instances on an image.
         """
@@ -374,7 +384,7 @@ class Visualizer:
         """
         boxes = predictions.pred_boxes if predictions.has("pred_boxes") else None
         scores = predictions.scores if predictions.has("scores") else None
-        classes = predictions.pred_classes if predictions.has("pred_classes") else None
+        classes = predictions.pred_classes.tolist() if predictions.has("pred_classes") else None
         labels = _create_text_labels(classes, scores, self.metadata.get("thing_classes", None))
         keypoints = predictions.pred_keypoints if predictions.has("pred_keypoints") else None
 
@@ -447,17 +457,17 @@ class Visualizer:
             )
         return self.output
 
-    def draw_panoptic_seg_predictions(
-        self, panoptic_seg, segments_info, area_threshold=None, alpha=0.7
-    ):
+    def draw_panoptic_seg(self, panoptic_seg, segments_info, area_threshold=None, alpha=0.7):
         """
-        Draw panoptic prediction results on an image.
+        Draw panoptic prediction annotations or results.
 
         Args:
             panoptic_seg (Tensor): of shape (height, width) where the values are ids for each
                 segment.
-            segments_info (list[dict]): Describe each segment in `panoptic_seg`.
-                Each dict contains keys "id", "category_id", "isthing".
+            segments_info (list[dict] or None): Describe each segment in `panoptic_seg`.
+                If it is a ``list[dict]``, each dict contains keys "id", "category_id".
+                If None, category id of each pixel is computed by
+                ``pixel // metadata.label_divisor``.
             area_threshold (int): stuff segments with less than `area_threshold` are not drawn.
 
         Returns:
@@ -497,7 +507,9 @@ class Visualizer:
             scores = [x["score"] for x in sinfo]
         except KeyError:
             scores = None
-        labels = _create_text_labels(category_ids, scores, self.metadata.thing_classes)
+        labels = _create_text_labels(
+            category_ids, scores, self.metadata.thing_classes, [x.get("iscrowd", 0) for x in sinfo]
+        )
 
         try:
             colors = [
@@ -508,6 +520,8 @@ class Visualizer:
         self.overlay_instances(masks=masks, labels=labels, assigned_colors=colors, alpha=alpha)
 
         return self.output
+
+    draw_panoptic_seg_predictions = draw_panoptic_seg  # backward compatibility
 
     def draw_dataset_dict(self, dic):
         """
@@ -538,19 +552,20 @@ class Visualizer:
                 for x in annos
             ]
 
-            labels = [x["category_id"] for x in annos]
             colors = None
+            category_ids = [x["category_id"] for x in annos]
             if self._instance_mode == ColorMode.SEGMENTATION and self.metadata.get("thing_colors"):
                 colors = [
-                    self._jitter([x / 255 for x in self.metadata.thing_colors[c]]) for c in labels
+                    self._jitter([x / 255 for x in self.metadata.thing_colors[c]])
+                    for c in category_ids
                 ]
             names = self.metadata.get("thing_classes", None)
-            if names:
-                labels = [names[i] for i in labels]
-            labels = [
-                "{}".format(i) + ("|crowd" if a.get("iscrowd", 0) else "")
-                for i, a in zip(labels, annos)
-            ]
+            labels = _create_text_labels(
+                category_ids,
+                scores=None,
+                class_names=names,
+                is_crowd=[x.get("iscrowd", 0) for x in annos],
+            )
             self.overlay_instances(
                 labels=labels, boxes=boxes, masks=masks, keypoints=keypts, assigned_colors=colors
             )
@@ -565,17 +580,16 @@ class Visualizer:
 
         pan_seg = dic.get("pan_seg", None)
         if pan_seg is None and "pan_seg_file_name" in dic:
-            assert "segments_info" in dic
             with PathManager.open(dic["pan_seg_file_name"], "rb") as f:
                 pan_seg = Image.open(f)
                 pan_seg = np.asarray(pan_seg)
                 from panopticapi.utils import rgb2id
 
                 pan_seg = rgb2id(pan_seg)
-            segments_info = dic["segments_info"]
         if pan_seg is not None:
-            pan_seg = torch.Tensor(pan_seg)
-            self.draw_panoptic_seg_predictions(pan_seg, segments_info, area_threshold=0, alpha=0.5)
+            segments_info = dic["segments_info"]
+            pan_seg = torch.tensor(pan_seg)
+            self.draw_panoptic_seg(pan_seg, segments_info, area_threshold=0, alpha=0.5)
         return self.output
 
     def overlay_instances(
@@ -617,7 +631,7 @@ class Visualizer:
         Returns:
             output (VisImage): image object with visualizations.
         """
-        num_instances = None
+        num_instances = 0
         if boxes is not None:
             boxes = self._convert_boxes(boxes)
             num_instances = len(boxes)

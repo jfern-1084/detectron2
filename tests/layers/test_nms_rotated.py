@@ -2,16 +2,18 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 import numpy as np
 import unittest
+from copy import deepcopy
 import torch
 from torchvision import ops
 
 from detectron2.layers import batched_nms, batched_nms_rotated, nms_rotated
+from detectron2.utils.env import TORCH_VERSION
 from detectron2.utils.testing import random_boxes
 
 
 def nms_edit_distance(keep1, keep2):
     """
-    Compare the "keep" result of two caffe_nms call.
+    Compare the "keep" result of two nms call.
     They are allowed to be different in terms of edit distance
     due to floating point precision issues, e.g.,
     if a box happen to have an IoU of 0.5 with another box,
@@ -122,7 +124,7 @@ class TestNMSRotated(unittest.TestCase):
         rotated_boxes[:, 1] = (boxes[:, 1] + boxes[:, 3]) / 2.0
         # Note for rotated_boxes[:, 2] and rotated_boxes[:, 3]:
         # widths and heights are intentionally swapped here for 90 degrees case
-        # so that the reference horizontal caffe_nms could be used
+        # so that the reference horizontal nms could be used
         rotated_boxes[:, 2] = boxes[:, 3] - boxes[:, 1]
         rotated_boxes[:, 3] = boxes[:, 2] - boxes[:, 0]
 
@@ -147,6 +149,26 @@ class TestNMSRotated(unittest.TestCase):
             keep_ref = self.reference_horizontal_nms(boxes, scores, iou)
             keep = nms_rotated(rotated_boxes, scores, iou)
             self.assertLessEqual(nms_edit_distance(keep, keep_ref), 1, err_msg.format(iou))
+
+
+class TestScriptable(unittest.TestCase):
+    def setUp(self):
+        class TestingModule(torch.nn.Module):
+            def forward(self, boxes, scores, threshold):
+                return nms_rotated(boxes, scores, threshold)
+
+        self.module = TestingModule()
+
+    @unittest.skipIf(TORCH_VERSION < (1, 7), "Insufficient pytorch version")
+    def test_scriptable_cpu(self):
+        m = deepcopy(self.module).cpu()
+        _ = torch.jit.script(m)
+
+    @unittest.skipIf(not torch.cuda.is_available(), "CUDA not available")
+    @unittest.skipIf(TORCH_VERSION < (1, 7), "Insufficient pytorch version")
+    def test_scriptable_cuda(self):
+        m = deepcopy(self.module).cuda()
+        _ = torch.jit.script(m)
 
 
 if __name__ == "__main__":

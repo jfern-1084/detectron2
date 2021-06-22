@@ -1,7 +1,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 
 from dataclasses import dataclass
-from typing import Any, Tuple
+from typing import Any, Optional, Tuple
 import torch
 
 
@@ -13,7 +13,7 @@ class DensePoseChartResult:
     that has an associated label and is parameterized by two coordinates U and V.
     Both U and V take values in [0, 1].
     Thus the results are represented by two tensors:
-    - labels (tensor [H, W] of uint8): contains estimated label for each pixel of
+    - labels (tensor [H, W] of long): contains estimated label for each pixel of
         the detection bounding box of size (H, W)
     - uv (tensor [2, H, W] of float): contains estimated U and V coordinates
         for each pixel of the detection bounding box of size (H, W)
@@ -36,7 +36,7 @@ class DensePoseChartResultWithConfidences:
     """
     We add confidence values to DensePoseChartResult
     Thus the results are represented by two tensors:
-    - labels (tensor [H, W] of uint8): contains estimated label for each pixel of
+    - labels (tensor [H, W] of long): contains estimated label for each pixel of
         the detection bounding box of size (H, W)
     - uv (tensor [2, H, W] of float): contains estimated U and V coordinates
         for each pixel of the detection bounding box of size (H, W)
@@ -45,12 +45,12 @@ class DensePoseChartResultWithConfidences:
 
     labels: torch.Tensor
     uv: torch.Tensor
-    sigma_1: torch.Tensor = None
-    sigma_2: torch.Tensor = None
-    kappa_u: torch.Tensor = None
-    kappa_v: torch.Tensor = None
-    fine_segm_confidence: torch.Tensor = None
-    coarse_segm_confidence: torch.Tensor = None
+    sigma_1: Optional[torch.Tensor] = None
+    sigma_2: Optional[torch.Tensor] = None
+    kappa_u: Optional[torch.Tensor] = None
+    kappa_v: Optional[torch.Tensor] = None
+    fine_segm_confidence: Optional[torch.Tensor] = None
+    coarse_segm_confidence: Optional[torch.Tensor] = None
 
     def to(self, device: torch.device):
         """

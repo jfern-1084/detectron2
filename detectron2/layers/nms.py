@@ -6,9 +6,15 @@ import torch
 from torchvision.ops import boxes as box_ops
 from torchvision.ops import nms  # BC-compat
 
-#NMS and Soft-NMS
-# from detectron2.layers import cython_nms
-# from detectron2.config import global_cfg
+from detectron2.utils.env import TORCH_VERSION
+
+if TORCH_VERSION < (1, 7):
+    from detectron2 import _C
+
+    nms_rotated_func = _C.nms_rotated
+else:
+    nms_rotated_func = torch.ops.detectron2.nms_rotated
+
 
 def batched_nms(
     boxes: torch.Tensor, scores: torch.Tensor, idxs: torch.Tensor, iou_threshold: float
@@ -31,29 +37,6 @@ def batched_nms(
     keep = result_mask.nonzero().view(-1)
     keep = keep[scores[keep].argsort(descending=True)]
     return keep
-
-#Work in progress!
-# Deprecated for now due to move to SOCIP.
-# Removed form __init__ as well. Add it when it is possible.
-# pyd and so files of cython_nms are available on github repo for now
-
-# def batched_diou_nms(boxes, scores, idxs, iou_threshold):
-#     #Added by Johan for experimenting with soft_nms
-#     #Replace this code with cuda code once available
-#     assert boxes.shape[-1] == 4
-#
-#     device = global_cfg.MODEL.DEVICE
-#     result_mask = scores.new_zeros(scores.size(), dtype=torch.bool)
-#     for id in torch.unique(idxs).cpu().tolist():
-#         mask = (idxs == id).nonzero().view(-1)
-#         dets = torch.cat((boxes[mask], scores[mask].view(-1, 1)), 1)
-#         # _, indices = cython_nms.soft_nms(dets.cpu().numpy())
-#         indices = cython_nms.diounms(dets.cpu().numpy(), iou_threshold, 0.9)
-#         keep = torch.tensor(indices, device=device)
-#         result_mask[mask[keep]] = True
-#     keep = result_mask.nonzero().view(-1)
-#     keep = keep[scores[keep].argsort(descending=True)]
-#     return keep
 
 
 # Note: this function (nms_rotated) might be moved into
@@ -119,9 +102,7 @@ def nms_rotated(boxes, scores, iou_threshold):
         keep (Tensor): int64 tensor with the indices of the elements that have been kept
         by Rotated NMS, sorted in decreasing order of scores
     """
-    from detectron2 import _C
-
-    return _C.nms_rotated(boxes, scores, iou_threshold)
+    return nms_rotated_func(boxes, scores, iou_threshold)
 
 
 # Note: this function (batched_nms_rotated) might be moved into

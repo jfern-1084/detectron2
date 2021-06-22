@@ -6,6 +6,7 @@ from torch import Tensor
 from detectron2.export.torchscript import patch_instances
 from detectron2.structures import Boxes, Instances
 from detectron2.utils.env import TORCH_VERSION
+from detectron2.utils.testing import convert_scripted_instances
 
 
 class TestInstances(unittest.TestCase):
@@ -133,23 +134,23 @@ class TestInstances(unittest.TestCase):
             x.proposal_boxes = Boxes(box_tensors)
             self.assertTrue(script_module(x))
 
-    # @unittest.skipIf(TORCH_VERSION < (1, 8), "Insufficient pytorch version")
-    # def test_script_to(self):
-    #     class f(torch.nn.Module):
-    #         def forward(self, x: Instances):
-    #             return x.to(torch.device("cpu"))
+    @unittest.skipIf(TORCH_VERSION < (1, 8), "Insufficient pytorch version")
+    def test_script_to(self):
+        class f(torch.nn.Module):
+            def forward(self, x: Instances):
+                return x.to(torch.device("cpu"))
 
-    #     image_shape = (15, 15)
-    #     fields = {"proposal_boxes": Boxes, "a": Tensor}
-    #     with patch_instances(fields) as new_instance:
-    #         script_module = torch.jit.script(f())
-    #         x = new_instance(image_shape)
-    #         script_module(x)
+        image_shape = (15, 15)
+        fields = {"proposal_boxes": Boxes, "a": Tensor}
+        with patch_instances(fields) as new_instance:
+            script_module = torch.jit.script(f())
+            x = new_instance(image_shape)
+            script_module(x)
 
-    #         box_tensors = torch.tensor([[5, 5, 10, 10], [1, 1, 2, 3]])
-    #         x.proposal_boxes = Boxes(box_tensors)
-    #         x.a = box_tensors
-    #         script_module(x)
+            box_tensors = torch.tensor([[5, 5, 10, 10], [1, 1, 2, 3]])
+            x.proposal_boxes = Boxes(box_tensors)
+            x.a = box_tensors
+            script_module(x)
 
     @unittest.skipIf(TORCH_VERSION < (1, 7), "Insufficient pytorch version")
     def test_script_getitem(self):
@@ -182,7 +183,7 @@ class TestInstances(unittest.TestCase):
         with patch_instances(fields) as NewInstances:
             # convert to NewInstances and back
             new1 = NewInstances.from_instances(orig)
-            new2 = new1.to_instances()
+            new2 = convert_scripted_instances(new1)
         self.assertTrue(torch.equal(orig.proposal_boxes.tensor, new1.proposal_boxes.tensor))
         self.assertTrue(torch.equal(orig.proposal_boxes.tensor, new2.proposal_boxes.tensor))
 

@@ -145,6 +145,10 @@ class InstancesList(object):
 
 
 class Caffe2Compatible(object):
+    """
+    A model can inherit this class to indicate that it can be traced and deployed with caffe2.
+    """
+
     def _get_tensor_mode(self):
         return self._tensor_mode
 
@@ -158,19 +162,16 @@ class Caffe2Compatible(object):
 
 
 class Caffe2RPN(Caffe2Compatible, rpn.RPN):
-    def forward(self, images, features, gt_instances=None):
-        assert not self.training
-
-        features = [features[f] for f in self.in_features]
-        objectness_logits_pred, anchor_deltas_pred = self.rpn_head(features)
-
+    def _generate_proposals(
+        self, images, objectness_logits_pred, anchor_deltas_pred, gt_instances=None
+    ):
         assert isinstance(images, ImageList)
         if self.tensor_mode:
             im_info = images.image_sizes
         else:
-            im_info = torch.Tensor(
-                [[im_sz[0], im_sz[1], torch.Tensor([1.0])] for im_sz in images.image_sizes]
-            ).to(images.tensor.device)
+            im_info = torch.tensor([[im_sz[0], im_sz[1], 1.0] for im_sz in images.image_sizes]).to(
+                images.tensor.device
+            )
         assert isinstance(im_info, torch.Tensor)
 
         rpn_rois_list = []
@@ -243,6 +244,17 @@ class Caffe2RPN(Caffe2Compatible, rpn.RPN):
 
         proposals = self.c2_postprocess(im_info, rpn_rois, rpn_roi_probs, self.tensor_mode)
         return proposals, {}
+
+    def forward(self, images, features, gt_instances=None):
+        assert not self.training
+        features = [features[f] for f in self.in_features]
+        objectness_logits_pred, anchor_deltas_pred = self.rpn_head(features)
+        return self._generate_proposals(
+            images,
+            objectness_logits_pred,
+            anchor_deltas_pred,
+            gt_instances,
+        )
 
     @staticmethod
     def c2_postprocess(im_info, rpn_rois, rpn_roi_probs, tensor_mode):
@@ -351,7 +363,7 @@ class Caffe2FastRCNNOutputsInference:
         self.tensor_mode = tensor_mode  # whether the output is caffe2 tensor mode
 
     def __call__(self, box_predictor, predictions, proposals):
-        """ equivalent to FastRCNNOutputLayers.inference """
+        """equivalent to FastRCNNOutputLayers.inference"""
         num_classes = box_predictor.num_classes
         score_thresh = box_predictor.test_score_thresh
         nms_thresh = box_predictor.test_nms_thresh
@@ -390,7 +402,7 @@ class Caffe2FastRCNNOutputsInference:
             im_info = proposals[0].image_size
             rois = rois.tensor
         else:
-            im_info = torch.Tensor(
+            im_info = torch.tensor(
                 [[sz[0], sz[1], 1.0] for sz in [x.image_size for x in proposals]]
             )
             batch_ids = cat(
@@ -482,7 +494,7 @@ class Caffe2FastRCNNOutputsInference:
 
 class Caffe2MaskRCNNInference:
     def __call__(self, pred_mask_logits, pred_instances):
-        """ equivalent to mask_head.mask_rcnn_inference """
+        """equivalent to mask_head.mask_rcnn_inference"""
         if all(isinstance(x, InstancesList) for x in pred_instances):
             assert len(pred_instances) == 1
             mask_probs_pred = pred_mask_logits.sigmoid()

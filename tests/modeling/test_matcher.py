@@ -5,12 +5,9 @@ import torch
 
 from detectron2.config import get_cfg
 from detectron2.modeling.matcher import Matcher
-from detectron2.utils.env import TORCH_VERSION
 
 
 class TestMatcher(unittest.TestCase):
-    # need https://github.com/pytorch/pytorch/pull/38378
-    @unittest.skipIf(TORCH_VERSION < (1, 6), "Insufficient pytorch version")
     def test_scriptability(self):
         cfg = get_cfg()
         anchor_matcher = Matcher(

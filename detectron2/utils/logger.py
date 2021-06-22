@@ -6,10 +6,13 @@ import os
 import sys
 import time
 from collections import Counter
+import torch
 from tabulate import tabulate
 from termcolor import colored
 
 from detectron2.utils.file_io import PathManager
+
+__all__ = ["setup_logger", "log_first_n", "log_every_n", "log_every_n_seconds"]
 
 
 class _ColorfulFormatter(logging.Formatter):
@@ -100,7 +103,8 @@ def setup_logger(
 # with the same file name can safely write to the same file.
 @functools.lru_cache(maxsize=None)
 def _cached_log_stream(filename):
-    io = PathManager.open(filename, "a")
+    # use 1K buffer if writing to cloud storage
+    io = PathManager.open(filename, "a", buffering=1024 if "://" in filename else -1)
     atexit.register(io.close)
     return io
 
@@ -223,3 +227,11 @@ def create_small_table(small_dict):
         numalign="center",
     )
     return table
+
+
+def _log_api_usage(identifier: str):
+    """
+    Internal function used to log the usage of different detectron2 components
+    inside facebook's infra.
+    """
+    torch._C._log_api_usage_once("detectron2." + identifier)

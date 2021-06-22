@@ -1,7 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 from .cityscapes_evaluation import CityscapesInstanceEvaluator, CityscapesSemSegEvaluator
 from .coco_evaluation import COCOEvaluator
-from .custom_coco_summarize import Summarize
 from .rotated_coco_evaluation import RotatedCOCOEvaluator
 from .evaluator import DatasetEvaluator, DatasetEvaluators, inference_context, inference_on_dataset
 from .lvis_evaluation import LVISEvaluator

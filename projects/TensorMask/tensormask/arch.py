@@ -348,8 +348,8 @@ class TensorMask(nn.Module):
         )
         # box transform
         self.box2box_transform = Box2BoxTransform(weights=cfg.MODEL.TENSOR_MASK.BBOX_REG_WEIGHTS)
-        self.register_buffer("pixel_mean", torch.Tensor(cfg.MODEL.PIXEL_MEAN).view(-1, 1, 1))
-        self.register_buffer("pixel_std", torch.Tensor(cfg.MODEL.PIXEL_STD).view(-1, 1, 1))
+        self.register_buffer("pixel_mean", torch.tensor(cfg.MODEL.PIXEL_MEAN).view(-1, 1, 1), False)
+        self.register_buffer("pixel_std", torch.tensor(cfg.MODEL.PIXEL_STD).view(-1, 1, 1), False)
 
     @property
     def device(self):
@@ -714,7 +714,7 @@ class TensorMask(nn.Module):
         pred_boxes = self.box2box_transform.apply_deltas(
             pred_deltas[top_idxs], anchors[top_idxs].tensor
         )
-        # apply caffe_nms
+        # apply nms
         keep = batched_nms(pred_boxes, pred_prob, cls_idxs, self.nms_threshold)
         # pick the top ones
         keep = keep[: self.detections_im]

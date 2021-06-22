@@ -1,29 +1,47 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import logging
 import numpy as np
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 import cv2
 import torch
 
-from ..data.structures import DensePoseDataRelative
+from densepose.structures import DensePoseDataRelative
+
 from ..structures import DensePoseChartResult
 from .base import Boxes, Image, MatrixVisualizer
 
 
 class DensePoseResultsVisualizer(object):
     def visualize(
-        self, image_bgr: Image, results_and_boxes_xywh: Optional[Tuple[DensePoseChartResult, Boxes]]
+        self,
+        image_bgr: Image,
+        results_and_boxes_xywh: Tuple[Optional[List[DensePoseChartResult]], Optional[Boxes]],
     ) -> Image:
-        if results_and_boxes_xywh is None:
-            return image_bgr
         densepose_result, boxes_xywh = results_and_boxes_xywh
+        if densepose_result is None or boxes_xywh is None:
+            return image_bgr
+
         boxes_xywh = boxes_xywh.cpu().numpy()
         context = self.create_visualization_context(image_bgr)
         for i, result in enumerate(densepose_result):
-            iuv_array = torch.cat((result.labels[None], result.uv * 255.0)).type(torch.uint8)
+            iuv_array = torch.cat(
+                (result.labels[None].type(torch.float32), result.uv * 255.0)
+            ).type(torch.uint8)
             self.visualize_iuv_arr(context, iuv_array.cpu().numpy(), boxes_xywh[i])
         image_bgr = self.context_to_image_bgr(context)
         return image_bgr
+
+    def create_visualization_context(self, image_bgr: Image):
+        return image_bgr
+
+    def visualize_iuv_arr(self, context, iuv_arr: np.ndarray, bbox_xywh) -> None:
+        pass
+
+    def context_to_image_bgr(self, context):
+        return context
+
+    def get_image_bgr_from_context(self, context):
+        return context
 
 
 class DensePoseMaskedColormapResultsVisualizer(DensePoseResultsVisualizer):
@@ -35,6 +53,7 @@ class DensePoseMaskedColormapResultsVisualizer(DensePoseResultsVisualizer):
         cmap=cv2.COLORMAP_PARULA,
         alpha=0.7,
         val_scale=1.0,
+        **kwargs,
     ):
         self.mask_visualizer = MatrixVisualizer(
             inplace=inplace, cmap=cmap, val_scale=val_scale, alpha=alpha
@@ -42,23 +61,16 @@ class DensePoseMaskedColormapResultsVisualizer(DensePoseResultsVisualizer):
         self.data_extractor = data_extractor
         self.segm_extractor = segm_extractor
 
-    def create_visualization_context(self, image_bgr: Image):
-        return image_bgr
-
     def context_to_image_bgr(self, context):
         return context
 
-    def get_image_bgr_from_context(self, context):
-        return context
-
-    def visualize_iuv_arr(self, context, iuv_arr: np.array, bbox_xywh):
+    def visualize_iuv_arr(self, context, iuv_arr: np.ndarray, bbox_xywh) -> None:
         image_bgr = self.get_image_bgr_from_context(context)
         matrix = self.data_extractor(iuv_arr)
         segm = self.segm_extractor(iuv_arr)
         mask = np.zeros(matrix.shape, dtype=np.uint8)
         mask[segm > 0] = 1
         image_bgr = self.mask_visualizer.visualize(image_bgr, mask, matrix, bbox_xywh)
-        return image_bgr
 
 
 def _extract_i_from_iuvarr(iuv_arr):
@@ -107,7 +119,7 @@ class DensePoseResultsMplContourVisualizer(DensePoseResultsVisualizer):
         image_bgr = image_rgb[:, :, ::-1].copy()
         return image_bgr
 
-    def visualize_iuv_arr(self, context, iuv_arr: np.ndarray, bbox_xywh: Boxes) -> Image:
+    def visualize_iuv_arr(self, context, iuv_arr: np.ndarray, bbox_xywh: Boxes) -> None:
         import matplotlib.pyplot as plt
 
         u = _extract_u_from_iuvarr(iuv_arr).astype(float) / 255.0
@@ -144,16 +156,7 @@ class DensePoseResultsCustomContourVisualizer(DensePoseResultsVisualizer):
             [int(v) for v in img_color_bgr.ravel()] for img_color_bgr in img_colors_bgr
         ]
 
-    def create_visualization_context(self, image_bgr: Image):
-        return image_bgr
-
-    def context_to_image_bgr(self, context):
-        return context
-
-    def get_image_bgr_from_context(self, context):
-        return context
-
-    def visualize_iuv_arr(self, context, iuv_arr: np.ndarray, bbox_xywh: Boxes) -> Image:
+    def visualize_iuv_arr(self, context, iuv_arr: np.ndarray, bbox_xywh: Boxes) -> None:
         image_bgr = self.get_image_bgr_from_context(context)
         segm = _extract_i_from_iuvarr(iuv_arr)
         u = _extract_u_from_iuvarr(iuv_arr).astype(float) / 255.0
@@ -305,7 +308,7 @@ class DensePoseResultsCustomContourVisualizer(DensePoseResultsVisualizer):
 try:
     import matplotlib
 
-    matplotlib.use("Agg")
+    matplotlib.use("Agg")  # pyre-ignore[16]
     DensePoseResultsContourVisualizer = DensePoseResultsMplContourVisualizer
 except ModuleNotFoundError:
     logger = logging.getLogger(__name__)
@@ -314,7 +317,7 @@ except ModuleNotFoundError:
 
 
 class DensePoseResultsFineSegmentationVisualizer(DensePoseMaskedColormapResultsVisualizer):
-    def __init__(self, inplace=True, cmap=cv2.COLORMAP_PARULA, alpha=0.7):
+    def __init__(self, inplace=True, cmap=cv2.COLORMAP_PARULA, alpha=0.7, **kwargs):
         super(DensePoseResultsFineSegmentationVisualizer, self).__init__(
             _extract_i_from_iuvarr,
             _extract_i_from_iuvarr,
@@ -322,18 +325,31 @@ class DensePoseResultsFineSegmentationVisualizer(DensePoseMaskedColormapResultsV
             cmap,
             alpha,
             val_scale=255.0 / DensePoseDataRelative.N_PART_LABELS,
+            **kwargs,
         )
 
 
 class DensePoseResultsUVisualizer(DensePoseMaskedColormapResultsVisualizer):
-    def __init__(self, inplace=True, cmap=cv2.COLORMAP_PARULA, alpha=0.7):
+    def __init__(self, inplace=True, cmap=cv2.COLORMAP_PARULA, alpha=0.7, **kwargs):
         super(DensePoseResultsUVisualizer, self).__init__(
-            _extract_u_from_iuvarr, _extract_i_from_iuvarr, inplace, cmap, alpha, val_scale=1.0
+            _extract_u_from_iuvarr,
+            _extract_i_from_iuvarr,
+            inplace,
+            cmap,
+            alpha,
+            val_scale=1.0,
+            **kwargs,
         )
 
 
 class DensePoseResultsVVisualizer(DensePoseMaskedColormapResultsVisualizer):
-    def __init__(self, inplace=True, cmap=cv2.COLORMAP_PARULA, alpha=0.7):
+    def __init__(self, inplace=True, cmap=cv2.COLORMAP_PARULA, alpha=0.7, **kwargs):
         super(DensePoseResultsVVisualizer, self).__init__(
-            _extract_v_from_iuvarr, _extract_i_from_iuvarr, inplace, cmap, alpha, val_scale=1.0
+            _extract_v_from_iuvarr,
+            _extract_i_from_iuvarr,
+            inplace,
+            cmap,
+            alpha,
+            val_scale=1.0,
+            **kwargs,
         )

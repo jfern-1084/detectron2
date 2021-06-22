@@ -5,7 +5,7 @@ import torch
 from torch import nn
 
 from detectron2.layers import ASPP, DepthwiseSeparableConv2d, FrozenBatchNorm2d
-from detectron2.utils.env import TORCH_VERSION
+from detectron2.modeling.backbone.resnet import BasicStem, ResNet
 
 
 """
@@ -22,7 +22,7 @@ class TestBlocks(unittest.TestCase):
         self.assertIsNot(m.convs[0].activation.weight, m.convs[1].activation.weight)
         self.assertIsNot(m.convs[0].activation.weight, m.project.activation.weight)
 
-    @unittest.skipIf(TORCH_VERSION < (1, 6) or not torch.cuda.is_available(), "CUDA not available")
+    @unittest.skipIf(not torch.cuda.is_available(), "CUDA not available")
     def test_frozen_batchnorm_fp16(self):
         from torch.cuda.amp import autocast
 
@@ -38,3 +38,14 @@ class TestBlocks(unittest.TestCase):
         with autocast():
             output = m(input.half())
         self.assertEqual(output.dtype, torch.float16)
+
+    def test_resnet_unused_stages(self):
+        resnet = ResNet(BasicStem(), ResNet.make_default_stages(18), out_features=["res2"])
+        self.assertTrue(hasattr(resnet, "res2"))
+        self.assertFalse(hasattr(resnet, "res3"))
+        self.assertFalse(hasattr(resnet, "res5"))
+
+        resnet = ResNet(BasicStem(), ResNet.make_default_stages(18), out_features=["res2", "res5"])
+        self.assertTrue(hasattr(resnet, "res2"))
+        self.assertTrue(hasattr(resnet, "res4"))
+        self.assertTrue(hasattr(resnet, "res5"))
