@@ -27,7 +27,7 @@ class BufferList(nn.Module):
         super().__init__()
         for i, buffer in enumerate(buffers):
             # Use non-persistent buffer so the values are not saved in checkpoint
-            self.register_buffer(str(i), buffer, persistent=False)
+            self.register_buffer(str(i), buffer)
 
     def __len__(self):
         return len(self._buffers)

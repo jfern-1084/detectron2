@@ -50,8 +50,8 @@ class SemanticSegmentor(nn.Module):
         super().__init__()
         self.backbone = backbone
         self.sem_seg_head = sem_seg_head
-        self.register_buffer("pixel_mean", torch.tensor(pixel_mean).view(-1, 1, 1), False)
-        self.register_buffer("pixel_std", torch.tensor(pixel_std).view(-1, 1, 1), False)
+        self.register_buffer("pixel_mean", torch.tensor(pixel_mean).view(-1, 1, 1))
+        self.register_buffer("pixel_std", torch.tensor(pixel_std).view(-1, 1, 1))
 
     @classmethod
     def from_config(cls, cfg):
