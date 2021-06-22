@@ -4,7 +4,7 @@ import math
 import numpy as np
 from typing import Dict, List, Tuple
 import torch
-from fvcore.nn import giou_loss, sigmoid_focal_loss_jit, smooth_l1_loss
+from fvcore.nn import sigmoid_focal_loss_jit
 from torch import Tensor, nn
 from torch.nn import functional as F
 
@@ -15,13 +15,16 @@ from detectron2.structures import Boxes, ImageList, Instances, pairwise_iou
 from detectron2.utils.events import get_event_storage
 
 from ..anchor_generator import build_anchor_generator
-from ..backbone import build_backbone
-from ..box_regression import Box2BoxTransform
+from ..backbone import Backbone, build_backbone
+from ..box_regression import Box2BoxTransform, _dense_box_regression_loss
 from ..matcher import Matcher
 from ..postprocessing import detector_postprocess
 from .build import META_ARCH_REGISTRY
 
 __all__ = ["RetinaNet"]
+
+
+logger = logging.getLogger(__name__)
 
 
 def permute_to_N_HWA_K(tensor, K: int):
@@ -46,8 +49,8 @@ class RetinaNet(nn.Module):
     def __init__(
         self,
         *,
-        backbone,
-        head,
+        backbone: Backbone,
+        head: nn.Module,
         head_in_features,
         anchor_generator,
         box2box_transform,
@@ -55,7 +58,7 @@ class RetinaNet(nn.Module):
         num_classes,
         focal_loss_alpha=0.25,
         focal_loss_gamma=2.0,
-        smooth_l1_beta=0.1,
+        smooth_l1_beta=0.0,
         box_reg_loss_type="smooth_l1",
         test_score_thresh=0.05,
         test_topk_candidates=1000,
@@ -116,6 +119,8 @@ class RetinaNet(nn.Module):
         self.backbone = backbone
         self.head = head
         self.head_in_features = head_in_features
+        if len(self.backbone.output_shape()) != len(self.head_in_features):
+            logger.warning("[RetinaNet] Backbone produces unused features.")
 
         # Anchors
         self.anchor_generator = anchor_generator
@@ -137,8 +142,8 @@ class RetinaNet(nn.Module):
         self.vis_period = vis_period
         self.input_format = input_format
 
-        self.register_buffer("pixel_mean", torch.Tensor(pixel_mean).view(-1, 1, 1))
-        self.register_buffer("pixel_std", torch.Tensor(pixel_std).view(-1, 1, 1))
+        self.register_buffer("pixel_mean", torch.tensor(pixel_mean).view(-1, 1, 1), False)
+        self.register_buffer("pixel_std", torch.tensor(pixel_std).view(-1, 1, 1), False)
 
         """
         In Detectron1, loss is normalized by number of foreground samples in the batch.
@@ -224,7 +229,7 @@ class RetinaNet(nn.Module):
         vis_name = f"Top: GT bounding boxes; Bottom: {max_boxes} Highest Scoring Results"
         storage.put_image(vis_name, vis_img)
 
-    def forward(self, batched_inputs: Tuple[Dict[str, Tensor]]):
+    def forward(self, batched_inputs: List[Dict[str, Tensor]]):
         """
         Args:
             batched_inputs: a list, batched outputs of :class:`DatasetMapper` .
@@ -239,9 +244,9 @@ class RetinaNet(nn.Module):
                 * "height", "width" (int): the output resolution of the model, used in inference.
                   See :meth:`postprocess` for details.
         Returns:
-            in training, dict[str: Tensor]:
-                mapping from a named loss to a tensor storing the loss. Used during training only.
-            in inference, the standard output format, described in :doc:`/tutorials/models`.
+            In training, dict[str, Tensor]: mapping from a named loss to a tensor storing the
+            loss. Used during training only. In inference, the standard output format, described
+            in :doc:`/tutorials/models`.
         """
         images = self.preprocess_image(batched_inputs)
         features = self.backbone(images.tensor)
@@ -303,9 +308,6 @@ class RetinaNet(nn.Module):
         """
         num_images = len(gt_labels)
         gt_labels = torch.stack(gt_labels)  # (N, R)
-        anchors = type(anchors[0]).cat(anchors).tensor  # (R, 4)
-        gt_anchor_deltas = [self.box2box_transform.get_deltas(anchors, k) for k in gt_boxes]
-        gt_anchor_deltas = torch.stack(gt_anchor_deltas)  # (N, R, 4)
 
         valid_mask = gt_labels >= 0
         pos_mask = (gt_labels >= 0) & (gt_labels != self.num_classes)
@@ -327,23 +329,15 @@ class RetinaNet(nn.Module):
             reduction="sum",
         )
 
-        if self.box_reg_loss_type == "smooth_l1":
-            loss_box_reg = smooth_l1_loss(
-                cat(pred_anchor_deltas, dim=1)[pos_mask],
-                gt_anchor_deltas[pos_mask],
-                beta=self.smooth_l1_beta,
-                reduction="sum",
-            )
-        elif self.box_reg_loss_type == "giou":
-            pred_boxes = [
-                self.box2box_transform.apply_deltas(k, anchors)
-                for k in cat(pred_anchor_deltas, dim=1)
-            ]
-            loss_box_reg = giou_loss(
-                torch.stack(pred_boxes)[pos_mask], torch.stack(gt_boxes)[pos_mask], reduction="sum"
-            )
-        else:
-            raise ValueError(f"Invalid bbox reg loss type '{self.box_reg_loss_type}'")
+        loss_box_reg = _dense_box_regression_loss(
+            anchors,
+            self.box2box_transform,
+            pred_anchor_deltas,
+            gt_boxes,
+            pos_mask,
+            box_reg_loss_type=self.box_reg_loss_type,
+            smooth_l1_beta=self.smooth_l1_beta,
+        )
 
         return {
             "loss_cls": loss_cls / self.loss_normalizer,
@@ -361,14 +355,13 @@ class RetinaNet(nn.Module):
                 for the i-th input image.
 
         Returns:
-            list[Tensor]:
-                List of #img tensors. i-th element is a vector of labels whose length is
-                the total number of anchors across all feature maps (sum(Hi * Wi * A)).
-                Label values are in {-1, 0, ..., K}, with -1 means ignore, and K means background.
-            list[Tensor]:
-                i-th element is a Rx4 tensor, where R is the total number of anchors across
-                feature maps. The values are the matched gt boxes for each anchor.
-                Values are undefined for those anchors not labeled as foreground.
+            list[Tensor]: List of #img tensors. i-th element is a vector of labels whose length is
+            the total number of anchors across all feature maps (sum(Hi * Wi * A)).
+            Label values are in {-1, 0, ..., K}, with -1 means ignore, and K means background.
+
+            list[Tensor]: i-th element is a Rx4 tensor, where R is the total number of anchors
+            across feature maps. The values are the matched gt boxes for each anchor.
+            Values are undefined for those anchors not labeled as foreground.
         """
         anchors = Boxes.cat(anchors)  # Rx4
 
@@ -492,7 +485,7 @@ class RetinaNet(nn.Module):
         result.pred_classes = class_idxs_all[keep]
         return result
 
-    def preprocess_image(self, batched_inputs: Tuple[Dict[str, Tensor]]):
+    def preprocess_image(self, batched_inputs: List[Dict[str, Tensor]]):
         """
         Normalize, pad and batch the input images.
         """
@@ -535,12 +528,13 @@ class RetinaNetHead(nn.Module):
         super().__init__()
 
         if norm == "BN" or norm == "SyncBN":
-            logger = logging.getLogger(__name__)
-            logger.warn("Shared norm does not work well for BN, SyncBN, expect poor results")
+            logger.warning("Shared norm does not work well for BN, SyncBN, expect poor results")
 
         cls_subnet = []
         bbox_subnet = []
-        for in_channels, out_channels in zip([input_shape[0].channels] + conv_dims, conv_dims):
+        for in_channels, out_channels in zip(
+            [input_shape[0].channels] + list(conv_dims), conv_dims
+        ):
             cls_subnet.append(
                 nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
             )

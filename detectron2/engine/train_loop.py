@@ -5,12 +5,13 @@ import logging
 import numpy as np
 import time
 import weakref
-from typing import Dict
+from typing import Dict, List, Optional
 import torch
 from torch.nn.parallel import DataParallel, DistributedDataParallel
 
 import detectron2.utils.comm as comm
 from detectron2.utils.events import EventStorage, get_event_storage
+from detectron2.utils.logger import _log_api_usage
 
 __all__ = ["HookBase", "TrainerBase", "SimpleTrainer", "AMPTrainer"]
 
@@ -45,9 +46,11 @@ class HookBase:
            between :meth:`before_step` and :meth:`after_step` (e.g., timer) to
            function properly.
 
-    Attributes:
-        trainer (TrainerBase): A weak reference to the trainer object. Set by the trainer
-            when the hook is registered.
+    """
+
+    trainer: "TrainerBase" = None
+    """
+    A weak reference to the trainer object. Set by the trainer when the hook is registered.
     """
 
     def before_train(self):
@@ -74,6 +77,13 @@ class HookBase:
         """
         pass
 
+    def state_dict(self):
+        """
+        Hooks are stateless by default, but can be made checkpointable by
+        implementing `state_dict` and `load_state_dict`.
+        """
+        return {}
+
 
 class TrainerBase:
     """
@@ -94,10 +104,15 @@ class TrainerBase:
         storage(EventStorage): An EventStorage that's opened during the course of training.
     """
 
-    def __init__(self):
-        self._hooks = []
+    def __init__(self) -> None:
+        self._hooks: List[HookBase] = []
+        self.iter: int = 0
+        self.start_iter: int = 0
+        self.max_iter: int
+        self.storage: EventStorage
+        _log_api_usage("trainer." + self.__class__.__name__)
 
-    def register_hooks(self, hooks):
+    def register_hooks(self, hooks: List[Optional[HookBase]]) -> None:
         """
         Register hooks to the trainer. The hooks are executed in the order
         they are registered.
@@ -167,6 +182,36 @@ class TrainerBase:
     def run_step(self):
         raise NotImplementedError
 
+    def state_dict(self):
+        ret = {"iteration": self.iter}
+        hooks_state = {}
+        for h in self._hooks:
+            sd = h.state_dict()
+            if sd:
+                name = type(h).__qualname__
+                if name in hooks_state:
+                    # TODO handle repetitive stateful hooks
+                    continue
+                hooks_state[name] = sd
+        if hooks_state:
+            ret["hooks"] = hooks_state
+        return ret
+
+    def load_state_dict(self, state_dict):
+        logger = logging.getLogger(__name__)
+        self.iter = state_dict["iteration"]
+        for key, value in state_dict.get("hooks", {}).items():
+            for h in self._hooks:
+                try:
+                    name = type(h).__qualname__
+                except AttributeError:
+                    continue
+                if name == key:
+                    h.load_state_dict(value)
+                    break
+            else:
+                logger.warning(f"Cannot find the hook '{key}', its state_dict is ignored.")
+
 
 class SimpleTrainer(TrainerBase):
     """
@@ -226,7 +271,11 @@ class SimpleTrainer(TrainerBase):
         If you want to do something with the losses, you can wrap the model.
         """
         loss_dict = self.model(data)
-        losses = sum(loss_dict.values())
+        if isinstance(loss_dict, torch.Tensor):
+            losses = loss_dict
+            loss_dict = {"total_loss": loss_dict}
+        else:
+            losses = sum(loss_dict.values())
 
         """
         If you need to accumulate gradients or do something similar, you can
@@ -244,23 +293,24 @@ class SimpleTrainer(TrainerBase):
         """
         self.optimizer.step()
 
-    def _write_metrics(self, loss_dict: Dict[str, torch.Tensor], data_time: float):
+    def _write_metrics(
+        self,
+        loss_dict: Dict[str, torch.Tensor],
+        data_time: float,
+        prefix: str = "",
+    ):
         """
         Args:
             loss_dict (dict): dict of scalar losses
             data_time (float): time taken by the dataloader iteration
         """
-        device = next(iter(loss_dict.values())).device
+        metrics_dict = {k: v.detach().cpu().item() for k, v in loss_dict.items()}
+        metrics_dict["data_time"] = data_time
 
-        # Use a new stream so these ops don't wait for DDP or backward
-        with torch.cuda.stream(torch.cuda.Stream() if device.type == "cuda" else None):
-            metrics_dict = {k: v.detach().cpu().item() for k, v in loss_dict.items()}
-            metrics_dict["data_time"] = data_time
-
-            # Gather metrics among all workers for logging
-            # This assumes we do DDP-style training, which is currently the only
-            # supported method in detectron2.
-            all_metrics_dict = comm.gather(metrics_dict)
+        # Gather metrics among all workers for logging
+        # This assumes we do DDP-style training, which is currently the only
+        # supported method in detectron2.
+        all_metrics_dict = comm.gather(metrics_dict)
 
         if comm.is_main_process():
             storage = get_event_storage()
@@ -281,9 +331,18 @@ class SimpleTrainer(TrainerBase):
                     f"loss_dict = {metrics_dict}"
                 )
 
-            storage.put_scalar("total_loss", total_losses_reduced)
+            storage.put_scalar("{}total_loss".format(prefix), total_losses_reduced)
             if len(metrics_dict) > 1:
                 storage.put_scalars(**metrics_dict)
+
+    def state_dict(self):
+        ret = super().state_dict()
+        ret["optimizer"] = self.optimizer.state_dict()
+        return ret
+
+    def load_state_dict(self, state_dict):
+        super().load_state_dict(state_dict)
+        self.optimizer.load_state_dict(state_dict["optimizer"])
 
 
 class AMPTrainer(SimpleTrainer):
@@ -325,7 +384,11 @@ class AMPTrainer(SimpleTrainer):
 
         with autocast():
             loss_dict = self.model(data)
-            losses = sum(loss_dict.values())
+            if isinstance(loss_dict, torch.Tensor):
+                losses = loss_dict
+                loss_dict = {"total_loss": loss_dict}
+            else:
+                losses = sum(loss_dict.values())
 
         self.optimizer.zero_grad()
         self.grad_scaler.scale(losses).backward()
@@ -334,3 +397,12 @@ class AMPTrainer(SimpleTrainer):
 
         self.grad_scaler.step(self.optimizer)
         self.grad_scaler.update()
+
+    def state_dict(self):
+        ret = super().state_dict()
+        ret["grad_scaler"] = self.grad_scaler.state_dict()
+        return ret
+
+    def load_state_dict(self, state_dict):
+        super().load_state_dict(state_dict)
+        self.grad_scaler.load_state_dict(state_dict["grad_scaler"])

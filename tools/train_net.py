@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # Copyright (c) Facebook, Inc. and its affiliates.
 """
-Detection Training Script.
+A main training script.
 
 This scripts reads a given config file and runs the training or evaluation.
 It is an entry point that is made to train standard models in detectron2.
@@ -85,7 +85,7 @@ class Trainer(DefaultTrainer):
         elif evaluator_type == "pascal_voc":
             return PascalVOCDetectionEvaluator(dataset_name)
         elif evaluator_type == "lvis":
-            return LVISEvaluator(dataset_name, cfg, True, output_folder)
+            return LVISEvaluator(dataset_name, output_dir=output_folder)
         if len(evaluator_list) == 0:
             raise NotImplementedError(
                 "no Evaluator for the dataset {} with the type {}".format(

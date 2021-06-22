@@ -12,7 +12,7 @@ from torch.utils.cpp_extension import CUDA_HOME, CppExtension, CUDAExtension
 from torch.utils.hipify import hipify_python
 
 torch_ver = [int(x) for x in torch.__version__.split(".")[:2]]
-assert torch_ver >= [1, 5], "Requires PyTorch >= 1.5"
+assert torch_ver >= [1, 6], "Requires PyTorch >= 1.6"
 
 
 def get_version():
@@ -51,7 +51,20 @@ def get_extensions():
         True if ((torch.version.hip is not None) and (ROCM_HOME is not None)) else False
     )
 
-    if is_rocm_pytorch:
+    hipify_ver = (
+        [int(x) for x in torch.utils.hipify.__version__.split(".")]
+        if hasattr(torch.utils.hipify, "__version__")
+        else [0, 0, 0]
+    )
+
+    if is_rocm_pytorch and hipify_ver < [1, 0, 0]:  # TODO not needed since pt1.8
+
+        # Earlier versions of hipification and extension modules were not
+        # transparent, i.e. would require an explicit call to hipify, and the
+        # hipification would introduce "hip" subdirectories, possibly changing
+        # the relationship between source and header files.
+        # This path is maintained for backwards compatibility.
+
         hipify_python.hipify(
             project_directory=this_dir,
             output_directory=this_dir,
@@ -60,12 +73,6 @@ def get_extensions():
             is_pytorch_extension=True,
         )
 
-        # Current version of hipify function in pytorch creates an intermediate directory
-        # named "hip" at the same level of the path hierarchy if a "cuda" directory exists,
-        # or modifying the hierarchy, if it doesn't. Once pytorch supports
-        # "same directory" hipification (https://github.com/pytorch/pytorch/pull/40523),
-        # the source_cuda will be set similarly in both cuda and hip paths, and the explicit
-        # header file copy (below) will not be needed.
         source_cuda = glob.glob(path.join(extensions_dir, "**", "hip", "*.hip")) + glob.glob(
             path.join(extensions_dir, "hip", "*.hip")
         )
@@ -79,17 +86,23 @@ def get_extensions():
             "detectron2/layers/csrc/deformable/hip/deform_conv.h",
         )
 
+        sources = [main_source] + sources
+        sources = [
+            s
+            for s in sources
+            if not is_rocm_pytorch or torch_ver < [1, 7] or not s.endswith("hip/vision.cpp")
+        ]
+
     else:
+
+        # common code between cuda and rocm platforms,
+        # for hipify version [1,0,0] and later.
+
         source_cuda = glob.glob(path.join(extensions_dir, "**", "*.cu")) + glob.glob(
             path.join(extensions_dir, "*.cu")
         )
 
-    sources = [main_source] + sources
-    sources = [
-        s
-        for s in sources
-        if not is_rocm_pytorch or torch_ver < [1, 7] or not s.endswith("hip/vision.cpp")
-    ]
+        sources = [main_source] + sources
 
     extension = CppExtension
 
@@ -163,7 +176,9 @@ def get_model_zoo_configs() -> List[str]:
             # Fall back to copying if symlink fails: ex. on Windows.
             shutil.copytree(source_configs_dir, destination)
 
-    config_paths = glob.glob("configs/**/*.yaml", recursive=True)
+    config_paths = glob.glob("configs/**/*.yaml", recursive=True) + glob.glob(
+        "configs/**/*.py", recursive=True
+    )
     return config_paths
 
 
@@ -198,23 +213,31 @@ setup(
         "matplotlib",
         "tqdm>4.29.0",
         "tensorboard",
-        "fvcore>=0.1.2",
-        "pycocotools>=2.0",  #Using my version for now. Will change later. Johan
-        # "fvcore>=0.1.2",
+        # Lock version of fvcore/iopath because they may have breaking changes
+        # NOTE: when updating fvcore/iopath version, make sure fvcore depends
+        # on compatible version of iopath.
+        "fvcore>=0.1.5,<0.1.6",  # required like this to make it pip installable
+        "iopath>=0.1.7,<0.1.9",
         # "pycocotools>=2.0.2",  # corresponds to https://github.com/ppwwyyxx/cocoapi
         "future",  # used by caffe2
         "pydot",  # used to save caffe2 SVGs
+        "dataclasses; python_version<'3.7'",
+        "omegaconf>=2.1.0rc1",
+        "hydra-core>=1.1.0rc1",
+        "black==21.4b2",
+        # When adding to the list, may need to update docs/requirements.txt
+        # or add mock in docs/conf.py
     ],
     extras_require={
         "all": [
             "shapely",
+            "pygments>=2.2",
             "psutil",
             "panopticapi @ https://github.com/cocodataset/panopticapi/archive/master.zip",
         ],
         "dev": [
             "flake8==3.8.1",
             "isort==4.3.21",
-            "black==20.8b1",
             "flake8-bugbear",
             "flake8-comprehensions",
         ],

@@ -7,6 +7,8 @@ inference_test_output
 *.png
 *.json
 *.diff
+*.jpg
+!/projects/DensePose/doc/images/*.jpg
 
 # compilation and distribution
 __pycache__
@@ -14,7 +16,8 @@ _ext
 *.pyc
 *.pyd
 *.so
-detectron2.egg-info/
+*.dll
+*.egg-info/
 build/
 dist/
 wheels/
@@ -23,6 +26,8 @@ wheels/
 *.pth
 *.pkl
 *.npy
+*.ts
+model_ts*.txt
 
 # ipython/jupyter notebooks
 *.ipynb
@@ -47,8 +52,10 @@ _darcs
 /models
 
 
-
 # Updated by Johan
 /detectron2/layers/cython_nms.c
 /detectron2/layers/cython_nms.cp37-win_amd64.pyd
 /detectron2/layers/cython_nms.cpython-36m-x86_64-linux-gnu.so
+
+/snippet
+

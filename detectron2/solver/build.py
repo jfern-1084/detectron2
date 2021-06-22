@@ -1,12 +1,15 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
+import copy
 import itertools
+import logging
 from enum import Enum
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Type, Union
 import torch
+from fvcore.common.param_scheduler import CosineParamScheduler, MultiStepParamScheduler
 
 from detectron2.config import CfgNode
 
-from .lr_scheduler import WarmupCosineLR, WarmupMultiStepLR
+from .lr_scheduler import LRMultiplier, WarmupParamScheduler
 
 _GradientClipperInput = Union[torch.Tensor, Iterable[torch.Tensor]]
 _GradientClipper = Callable[[_GradientClipperInput], None]
@@ -22,7 +25,7 @@ def _create_gradient_clipper(cfg: CfgNode) -> _GradientClipper:
     Creates gradient clipping closure to clip by value or by norm,
     according to the provided config.
     """
-    cfg = cfg.clone()
+    cfg = copy.deepcopy(cfg)
 
     def clip_grad_norm(p: _GradientClipperInput):
         torch.nn.utils.clip_grad_norm_(p, cfg.CLIP_VALUE, cfg.NORM_TYPE)
@@ -41,7 +44,7 @@ def _generate_optimizer_class_with_gradient_clipping(
     optimizer: Type[torch.optim.Optimizer],
     *,
     per_param_clipper: Optional[_GradientClipper] = None,
-    global_clipper: Optional[_GradientClipper] = None
+    global_clipper: Optional[_GradientClipper] = None,
 ) -> Type[torch.optim.Optimizer]:
     """
     Dynamically creates a new type that inherits the type of a given instance
@@ -114,37 +117,74 @@ def build_optimizer(cfg: CfgNode, model: torch.nn.Module) -> torch.optim.Optimiz
     params = get_default_optimizer_params(
         model,
         base_lr=cfg.SOLVER.BASE_LR,
-        weight_decay=cfg.SOLVER.WEIGHT_DECAY,
         weight_decay_norm=cfg.SOLVER.WEIGHT_DECAY_NORM,
         bias_lr_factor=cfg.SOLVER.BIAS_LR_FACTOR,
         weight_decay_bias=cfg.SOLVER.WEIGHT_DECAY_BIAS,
     )
     return maybe_add_gradient_clipping(cfg, torch.optim.SGD)(
-        params, cfg.SOLVER.BASE_LR, momentum=cfg.SOLVER.MOMENTUM, nesterov=cfg.SOLVER.NESTEROV
+        params,
+        lr=cfg.SOLVER.BASE_LR,
+        momentum=cfg.SOLVER.MOMENTUM,
+        nesterov=cfg.SOLVER.NESTEROV,
+        weight_decay=cfg.SOLVER.WEIGHT_DECAY,
     )
 
 
 def get_default_optimizer_params(
     model: torch.nn.Module,
-    base_lr,
-    weight_decay,
-    weight_decay_norm,
-    bias_lr_factor=1.0,
-    weight_decay_bias=None,
+    base_lr: Optional[float] = None,
+    weight_decay: Optional[float] = None,
+    weight_decay_norm: Optional[float] = None,
+    bias_lr_factor: Optional[float] = 1.0,
+    weight_decay_bias: Optional[float] = None,
     overrides: Optional[Dict[str, Dict[str, float]]] = None,
 ):
     """
-    Get default param list for optimizer
+    Get default param list for optimizer, with support for a few types of
+    overrides. If no overrides needed, this is equivalent to `model.parameters()`.
 
     Args:
-        overrides (dict: str -> (dict: str -> float)):
-            if not `None`, provides values for optimizer hyperparameters
+        base_lr: lr for every group by default. Can be omitted to use the one in optimizer.
+        weight_decay: weight decay for every group by default. Can be omitted to use the one
+            in optimizer.
+        weight_decay_norm: override weight decay for params in normalization layers
+        bias_lr_factor: multiplier of lr for bias parameters.
+        weight_decay_bias: override weight decay for bias parameters
+        overrides: if not `None`, provides values for optimizer hyperparameters
             (LR, weight decay) for module parameters with a given name; e.g.
-            {"embedding": {"lr": 0.01, "weight_decay": 0.1}} will set the LR and
-            weight decay values for all module parameters named `embedding` (default: None)
+            ``{"embedding": {"lr": 0.01, "weight_decay": 0.1}}`` will set the LR and
+            weight decay values for all module parameters named `embedding`.
+
+    For common detection models, ``weight_decay_norm`` is the only option
+    needed to be set. ``bias_lr_factor,weight_decay_bias`` are legacy settings
+    from Detectron1 that are not found useful.
+
+    Example:
+    ::
+        torch.optim.SGD(get_default_optimizer_params(model, weight_decay_norm=0),
+                       lr=0.01, weight_decay=1e-4, momentum=0.9)
     """
-    if weight_decay_bias is None:
-        weight_decay_bias = weight_decay
+    if overrides is None:
+        overrides = {}
+    defaults = {}
+    if base_lr is not None:
+        defaults["lr"] = base_lr
+    if weight_decay is not None:
+        defaults["weight_decay"] = weight_decay
+    bias_overrides = {}
+    if bias_lr_factor is not None and bias_lr_factor != 1.0:
+        # NOTE: unlike Detectron v1, we now by default make bias hyperparameters
+        # exactly the same as regular weights.
+        if base_lr is None:
+            raise ValueError("bias_lr_factor requires base_lr")
+        bias_overrides["lr"] = base_lr * bias_lr_factor
+    if weight_decay_bias is not None:
+        bias_overrides["weight_decay"] = weight_decay_bias
+    if len(bias_overrides):
+        if "bias" in overrides:
+            raise ValueError("Conflicting overrides for 'bias'")
+        overrides["bias"] = bias_overrides
+
     norm_module_types = (
         torch.nn.BatchNorm1d,
         torch.nn.BatchNorm2d,
@@ -169,29 +209,11 @@ def get_default_optimizer_params(
                 continue
             memo.add(value)
 
-            schedule_params = {
-                "lr": base_lr,
-                "weight_decay": weight_decay,
-            }
-            if isinstance(module, norm_module_types):
-                schedule_params["weight_decay"] = weight_decay_norm
-            elif module_param_name == "bias":
-                # NOTE: unlike Detectron v1, we now default BIAS_LR_FACTOR to 1.0
-                # and WEIGHT_DECAY_BIAS to WEIGHT_DECAY so that bias optimizer
-                # hyperparameters are by default exactly the same as for regular
-                # weights.
-                schedule_params["lr"] = base_lr * bias_lr_factor
-                schedule_params["weight_decay"] = weight_decay_bias
-            if overrides is not None and module_param_name in overrides:
-                schedule_params.update(overrides[module_param_name])
-            params += [
-                {
-                    "params": [value],
-                    "lr": schedule_params["lr"],
-                    "weight_decay": schedule_params["weight_decay"],
-                }
-            ]
-
+            hyperparams = copy.copy(defaults)
+            if isinstance(module, norm_module_types) and weight_decay_norm is not None:
+                hyperparams["weight_decay"] = weight_decay_norm
+            hyperparams.update(overrides.get(module_param_name, {}))
+            params.append({"params": [value], **hyperparams})
     return params
 
 
@@ -202,22 +224,29 @@ def build_lr_scheduler(
     Build a LR scheduler from config.
     """
     name = cfg.SOLVER.LR_SCHEDULER_NAME
+
     if name == "WarmupMultiStepLR":
-        return WarmupMultiStepLR(
-            optimizer,
-            cfg.SOLVER.STEPS,
-            cfg.SOLVER.GAMMA,
-            warmup_factor=cfg.SOLVER.WARMUP_FACTOR,
-            warmup_iters=cfg.SOLVER.WARMUP_ITERS,
-            warmup_method=cfg.SOLVER.WARMUP_METHOD,
+        steps = [x for x in cfg.SOLVER.STEPS if x <= cfg.SOLVER.MAX_ITER]
+        if len(steps) != len(cfg.SOLVER.STEPS):
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "SOLVER.STEPS contains values larger than SOLVER.MAX_ITER. "
+                "These values will be ignored."
+            )
+        sched = MultiStepParamScheduler(
+            values=[cfg.SOLVER.GAMMA ** k for k in range(len(steps) + 1)],
+            milestones=steps,
+            num_updates=cfg.SOLVER.MAX_ITER,
         )
     elif name == "WarmupCosineLR":
-        return WarmupCosineLR(
-            optimizer,
-            cfg.SOLVER.MAX_ITER,
-            warmup_factor=cfg.SOLVER.WARMUP_FACTOR,
-            warmup_iters=cfg.SOLVER.WARMUP_ITERS,
-            warmup_method=cfg.SOLVER.WARMUP_METHOD,
-        )
+        sched = CosineParamScheduler(1, 0)
     else:
         raise ValueError("Unknown LR scheduler: {}".format(name))
+
+    sched = WarmupParamScheduler(
+        sched,
+        cfg.SOLVER.WARMUP_FACTOR,
+        min(cfg.SOLVER.WARMUP_ITERS / cfg.SOLVER.MAX_ITER, 1.0),
+        cfg.SOLVER.WARMUP_METHOD,
+    )
+    return LRMultiplier(optimizer, multiplier=sched, max_iter=cfg.SOLVER.MAX_ITER)

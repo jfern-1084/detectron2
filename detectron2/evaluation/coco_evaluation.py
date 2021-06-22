@@ -34,6 +34,8 @@ class COCOEvaluator(DatasetEvaluator):
     for keypoint detection outputs using COCO's metrics.
     See http://cocodataset.org/#detection-eval and
     http://cocodataset.org/#keypoints-eval to understand its metrics.
+    The metrics range from 0 to 100 (instead of 0 to 1), where a -1 or NaN means
+    the metric cannot be computed (e.g. due to no predictions made).
 
     In addition to COCO, this evaluator is able to support any bounding box detection,
     instance segmentation, or keypoint detection dataset.
@@ -68,10 +70,9 @@ class COCOEvaluator(DatasetEvaluator):
             output_dir (str): optional, an output directory to dump all
                 results predicted on the dataset. The dump contains two files:
 
-                1. "instances_predictions.pth" a file in torch serialization
-                   format that contains all the raw original predictions.
-                2. "coco_instances_results.json" a json file in COCO's result
-                   format.
+                1. "instances_predictions.pth" a file that can be loaded with `torch.load` and
+                   contains all the results in the format they are produced by the model.
+                2. "coco_instances_results.json" a json file in COCO's result format.
             use_fast_impl (bool): use a fast but **unofficial** implementation to compute AP.
                 Although the results should be very close to the official implementation in COCO
                 API, it is still recommended to compute results with the official API for use in
@@ -148,7 +149,8 @@ class COCOEvaluator(DatasetEvaluator):
                 prediction["instances"] = instances_to_coco_json(instances, input["image_id"])
             if "proposals" in output:
                 prediction["proposals"] = output["proposals"].to(self._cpu_device)
-            self._predictions.append(prediction)
+            if len(prediction) > 1:
+                self._predictions.append(prediction)
 
     def evaluate(self, img_ids=None):
         """
@@ -240,6 +242,7 @@ class COCOEvaluator(DatasetEvaluator):
             )
         )
         for task in sorted(tasks):
+            assert task in {"bbox", "segm", "keypoints"}, f"Got unknown task: {task}!"
             coco_eval = (
                 _evaluate_predictions_on_coco(
                     self._coco_api,

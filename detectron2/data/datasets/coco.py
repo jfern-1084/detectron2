@@ -8,11 +8,11 @@ import numpy as np
 import os
 import shutil
 import pycocotools.mask as mask_util
-from fvcore.common.file_io import file_lock
 from fvcore.common.timer import Timer
+from iopath.common.file_io import file_lock
 from PIL import Image
 
-from detectron2.structures import Boxes, BoxMode, PolygonMasks
+from detectron2.structures import Boxes, BoxMode, PolygonMasks, RotatedBoxes
 from detectron2.utils.file_io import PathManager
 
 from .. import DatasetCatalog, MetadataCatalog
@@ -36,17 +36,26 @@ def load_coco_json(json_file, image_root, dataset_name=None, extra_annotation_ke
     Args:
         json_file (str): full path to the json file in COCO instances annotation format.
         image_root (str or path-like): the directory where the images in this json file exists.
-        dataset_name (str): the name of the dataset (e.g., coco_2017_train).
-            If provided, this function will also put "thing_classes" into
-            the metadata associated with this dataset.
+        dataset_name (str or None): the name of the dataset (e.g., coco_2017_train).
+            When provided, this function will also do the following:
+
+            * Put "thing_classes" into the metadata associated with this dataset.
+            * Map the category ids into a contiguous range (needed by standard dataset format),
+              and add "thing_dataset_id_to_contiguous_id" to the metadata associated
+              with this dataset.
+
+            This option should usually be provided, unless users need to load
+            the original json content and apply more processing manually.
         extra_annotation_keys (list[str]): list of per-annotation keys that should also be
             loaded into the dataset dict (besides "iscrowd", "bbox", "keypoints",
             "category_id", "segmentation"). The values for these keys will be returned as-is.
             For example, the densepose annotations are loaded in this way.
 
     Returns:
-        list[dict]: a list of dicts in Detectron2 standard dataset dicts format. (See
-        `Using Custom Datasets </tutorials/datasets.html>`_ )
+        list[dict]: a list of dicts in Detectron2 standard dataset dicts format (See
+        `Using Custom Datasets </tutorials/datasets.html>`_ ) when `dataset_name` is not None.
+        If `dataset_name` is None, the returned `category_ids` may be
+        incontiguous and may not conform to the Detectron2 standard format.
 
     Notes:
         1. This function does not read the image files.
@@ -162,6 +171,11 @@ Category ids in annotations are not in [1, #categories]! We'll apply a mapping f
             assert anno.get("ignore", 0) == 0, '"ignore" in COCO json file is not supported.'
 
             obj = {key: anno[key] for key in ann_keys if key in anno}
+            if "bbox" in obj and len(obj["bbox"]) == 0:
+                raise ValueError(
+                    f"One annotation of image {image_id} contains empty 'bbox' value! "
+                    "This json does not have valid COCO format."
+                )
 
             segm = anno.get("segmentation", None)
             if segm:  # either list[list[float]] or dict(RLE)
@@ -190,7 +204,14 @@ Category ids in annotations are not in [1, #categories]! We'll apply a mapping f
 
             obj["bbox_mode"] = BoxMode.XYWH_ABS
             if id_map:
-                obj["category_id"] = id_map[obj["category_id"]]
+                annotation_category_id = obj["category_id"]
+                try:
+                    obj["category_id"] = id_map[annotation_category_id]
+                except KeyError as e:
+                    raise KeyError(
+                        f"Encountered category_id={annotation_category_id} "
+                        "but this id does not exist in 'categories' of the json file."
+                    ) from e
             objs.append(obj)
         record["annotations"] = objs
         dataset_dicts.append(record)
@@ -200,8 +221,8 @@ Category ids in annotations are not in [1, #categories]! We'll apply a mapping f
             "Filtered out {} instances without valid segmentation. ".format(
                 num_instances_without_valid_segmentation
             )
-            + "There might be issues in your dataset generation process. "
-            "A valid polygon should be a list[float] with even length >= 6."
+            + "There might be issues in your dataset generation process.  Please "
+            "check https://detectron2.readthedocs.io/en/latest/tutorials/datasets.html carefully"
         )
     return dataset_dicts
 
@@ -335,8 +356,14 @@ def convert_to_coco_dict(dataset_name):
             # create a new dict with only COCO fields
             coco_annotation = {}
 
-            # COCO requirement: XYWH box format
+            # COCO requirement: XYWH box format for axis-align and XYWHA for rotated
             bbox = annotation["bbox"]
+            if isinstance(bbox, np.ndarray):
+                if bbox.ndim != 1:
+                    raise ValueError(f"bbox has to be 1-dimensional. Got shape={bbox.shape}.")
+                bbox = bbox.tolist()
+            if len(bbox) not in [4, 5]:
+                raise ValueError(f"bbox has to has length 4 or 5. Got {bbox}.")
             from_bbox_mode = annotation["bbox_mode"]
             to_bbox_mode = BoxMode.XYWH_ABS if len(bbox) == 4 else BoxMode.XYWHA_ABS
             bbox = BoxMode.convert(bbox, from_bbox_mode, to_bbox_mode)
@@ -355,8 +382,11 @@ def convert_to_coco_dict(dataset_name):
                     raise TypeError(f"Unknown segmentation type {type(segmentation)}!")
             else:
                 # Computing areas using bounding boxes
-                bbox_xy = BoxMode.convert(bbox, to_bbox_mode, BoxMode.XYXY_ABS)
-                area = Boxes([bbox_xy]).area()[0].item()
+                if to_bbox_mode == BoxMode.XYWH_ABS:
+                    bbox_xy = BoxMode.convert(bbox, to_bbox_mode, BoxMode.XYXY_ABS)
+                    area = Boxes([bbox_xy]).area()[0].item()
+                else:
+                    area = RotatedBoxes([bbox]).area()[0].item()
 
             if "keypoints" in annotation:
                 keypoints = annotation["keypoints"]  # list[int]
