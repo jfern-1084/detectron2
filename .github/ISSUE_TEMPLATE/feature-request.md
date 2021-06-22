@@ -1,7 +1,6 @@
 ---
 name: "\U0001F680Feature Request"
 about: Suggest an improvement or new feature
-labels: enhancement
 
 ---
 

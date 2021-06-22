@@ -1,4 +1,4 @@
-detectron2.evaluation 
+detectron2.evaluation package
 =============================
 
 .. automodule:: detectron2.evaluation

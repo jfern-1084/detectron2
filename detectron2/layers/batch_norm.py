@@ -1,10 +1,9 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import logging
-from functools import partial
 import torch
 import torch.distributed as dist
-from fvcore.nn.distributed import differentiable_all_reduce
 from torch import nn
+from torch.autograd.function import Function
 from torch.nn import functional as F
 
 from detectron2.utils import comm, env
@@ -79,6 +78,12 @@ class FrozenBatchNorm2d(nn.Module):
             if prefix + "running_var" not in state_dict:
                 state_dict[prefix + "running_var"] = torch.ones_like(self.running_var)
 
+        if version is not None and version < 3:
+            logger = logging.getLogger(__name__)
+            logger.info("FrozenBatchNorm {} is upgraded to version 3.".format(prefix.rstrip(".")))
+            # In version < 3, running_var are used without +eps.
+            state_dict[prefix + "running_var"] -= self.eps
+
         super()._load_from_state_dict(
             state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
         )
@@ -89,7 +94,7 @@ class FrozenBatchNorm2d(nn.Module):
     @classmethod
     def convert_frozen_batchnorm(cls, module):
         """
-        Convert all BatchNorm/SyncBatchNorm in module into FrozenBatchNorm.
+        Convert BatchNorm/SyncBatchNorm in module into FrozenBatchNorm.
 
         Args:
             module (torch.nn.Module):
@@ -120,31 +125,6 @@ class FrozenBatchNorm2d(nn.Module):
         return res
 
 
-# SplitBatchNorm: simulate multi-gpu behavior of BatchNorm in one gpu by splitting alone the batch dimension
-# implementation adapted from https://github.com/davidcpage/cifar10-fast/blob/master/torch_backend.py
-class SplitBatchNorm(nn.BatchNorm2d):
-    def __init__(self, num_features, num_splits, **kw):
-        super().__init__(num_features, **kw)
-        self.num_splits = num_splits
-
-    def forward(self, input):
-        N, C, H, W = input.shape
-        if self.training or not self.track_running_stats:
-            running_mean_split = self.running_mean.repeat(self.num_splits)
-            running_var_split = self.running_var.repeat(self.num_splits)
-            outcome = nn.functional.batch_norm(
-                input.view(-1, C * self.num_splits, H, W), running_mean_split, running_var_split,
-                self.weight.repeat(self.num_splits), self.bias.repeat(self.num_splits),
-                True, self.momentum, self.eps).view(N, C, H, W)
-            self.running_mean.data.copy_(running_mean_split.view(self.num_splits, C).mean(dim=0))
-            self.running_var.data.copy_(running_var_split.view(self.num_splits, C).mean(dim=0))
-            return outcome
-        else:
-            return nn.functional.batch_norm(
-                input, self.running_mean, self.running_var,
-                self.weight, self.bias, False, self.momentum, self.eps)
-
-
 def get_norm(norm, out_channels):
     """
     Args:
@@ -169,9 +149,23 @@ def get_norm(norm, out_channels):
             # for debugging:
             "nnSyncBN": nn.SyncBatchNorm,
             "naiveSyncBN": NaiveSyncBatchNorm,
-            "splitBN" : partial(SplitBatchNorm, num_splits=2)
         }[norm]
     return norm(out_channels)
+
+
+class AllReduce(Function):
+    @staticmethod
+    def forward(ctx, input):
+        input_list = [torch.zeros_like(input) for k in range(dist.get_world_size())]
+        # Use allgather instead of allreduce since I don't trust in-place operations ..
+        dist.all_gather(input_list, input, async_op=False)
+        inputs = torch.stack(input_list, dim=0)
+        return torch.sum(inputs, dim=0)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        dist.all_reduce(grad_output, async_op=False)
+        return grad_output
 
 
 class NaiveSyncBatchNorm(BatchNorm2d):
@@ -213,17 +207,13 @@ class NaiveSyncBatchNorm(BatchNorm2d):
 
         B, C = input.shape[0], input.shape[1]
 
-        half_input = input.dtype == torch.float16
-        if half_input:
-            # fp16 does not have good enough numerics for the reduction here
-            input = input.float()
         mean = torch.mean(input, dim=[0, 2, 3])
         meansqr = torch.mean(input * input, dim=[0, 2, 3])
 
         if self._stats_mode == "":
             assert B > 0, 'SyncBatchNorm(stats_mode="") does not support zero batch size.'
             vec = torch.cat([mean, meansqr], dim=0)
-            vec = differentiable_all_reduce(vec) * (1.0 / dist.get_world_size())
+            vec = AllReduce.apply(vec) * (1.0 / dist.get_world_size())
             mean, meansqr = torch.split(vec, C)
             momentum = self.momentum
         else:
@@ -234,11 +224,12 @@ class NaiveSyncBatchNorm(BatchNorm2d):
                 vec = torch.cat(
                     [mean, meansqr, torch.ones([1], device=mean.device, dtype=mean.dtype)], dim=0
                 )
-            vec = differentiable_all_reduce(vec * B)
+            vec = AllReduce.apply(vec * B)
 
             total_batch = vec[-1].detach()
             momentum = total_batch.clamp(max=1) * self.momentum  # no update if total_batch is 0
-            mean, meansqr, _ = torch.split(vec / total_batch.clamp(min=1), C)  # avoid div-by-zero
+            total_batch = torch.max(total_batch, torch.ones_like(total_batch))  # avoid div-by-zero
+            mean, meansqr, _ = torch.split(vec / total_batch, C)
 
         var = meansqr - mean * mean
         invstd = torch.rsqrt(var + self.eps)
@@ -249,7 +240,4 @@ class NaiveSyncBatchNorm(BatchNorm2d):
 
         self.running_mean += momentum * (mean.detach() - self.running_mean)
         self.running_var += momentum * (var.detach() - self.running_var)
-        ret = input * scale + bias
-        if half_input:
-            ret = ret.half()
-        return ret
+        return input * scale + bias

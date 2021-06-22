@@ -1,4 +1,4 @@
-detectron2.modeling 
+detectron2.modeling package
 ===========================
 
 .. automodule:: detectron2.modeling

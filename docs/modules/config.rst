@@ -1,4 +1,4 @@
-detectron2.config 
+detectron2.config package
 =========================
 
 Related tutorials: :doc:`../tutorials/configs`, :doc:`../tutorials/extend`.

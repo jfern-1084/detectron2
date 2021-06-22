@@ -1,11 +1,11 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import math
-from typing import List, Tuple
+from typing import Any, Iterator, Tuple, Union
 import torch
 
 from detectron2.layers.rotated_boxes import pairwise_iou_rotated
 
-from .boxes import Boxes, _maybe_jit_unused
+from .boxes import Boxes
 
 
 class RotatedBoxes(Boxes):
@@ -229,10 +229,8 @@ class RotatedBoxes(Boxes):
         """
         return RotatedBoxes(self.tensor.clone())
 
-    @_maybe_jit_unused
-    def to(self, device: torch.device):
-        # Boxes are assumed float32 and does not support to(dtype)
-        return RotatedBoxes(self.tensor.to(device=device))
+    def to(self, *args: Any, **kwargs: Any) -> "RotatedBoxes":
+        return RotatedBoxes(self.tensor.to(*args, **kwargs))
 
     def area(self) -> torch.Tensor:
         """
@@ -316,7 +314,7 @@ class RotatedBoxes(Boxes):
         keep = (widths > threshold) & (heights > threshold)
         return keep
 
-    def __getitem__(self, item) -> "RotatedBoxes":
+    def __getitem__(self, item: Union[int, slice, torch.BoolTensor]) -> "RotatedBoxes":
         """
         Returns:
             RotatedBoxes: Create a new :class:`RotatedBoxes` by indexing.
@@ -454,33 +452,11 @@ class RotatedBoxes(Boxes):
         # when sfx == sfy, angle(new) == atan2(s, c) == angle(old)
         self.tensor[:, 4] = torch.atan2(scale_x * s, scale_y * c) * 180 / math.pi
 
-    @classmethod
-    @_maybe_jit_unused
-    def cat(cls, boxes_list: List["RotatedBoxes"]) -> "RotatedBoxes":
-        """
-        Concatenates a list of RotatedBoxes into a single RotatedBoxes
-
-        Arguments:
-            boxes_list (list[RotatedBoxes])
-
-        Returns:
-            RotatedBoxes: the concatenated RotatedBoxes
-        """
-        assert isinstance(boxes_list, (list, tuple))
-        if len(boxes_list) == 0:
-            return cls(torch.empty(0))
-        assert all([isinstance(box, RotatedBoxes) for box in boxes_list])
-
-        # use torch.cat (v.s. layers.cat) so the returned boxes never share storage with input
-        cat_boxes = cls(torch.cat([b.tensor for b in boxes_list], dim=0))
-        return cat_boxes
-
     @property
-    def device(self) -> torch.device:
+    def device(self) -> str:
         return self.tensor.device
 
-    @torch.jit.unused
-    def __iter__(self):
+    def __iter__(self) -> Iterator[torch.Tensor]:
         """
         Yield a box as a Tensor of shape (5,) at a time.
         """
@@ -491,7 +467,7 @@ def pairwise_iou(boxes1: RotatedBoxes, boxes2: RotatedBoxes) -> None:
     """
     Given two lists of rotated boxes of size N and M,
     compute the IoU (intersection over union)
-    between **all** N x M pairs of boxes.
+    between __all__ N x M pairs of boxes.
     The box order must be (x_center, y_center, width, height, angle).
 
     Args:

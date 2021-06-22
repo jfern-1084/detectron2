@@ -8,20 +8,18 @@ from detectron2.utils.file_io import PathManager
 
 from .torchscript_patch import freeze_training_mode, patch_instances
 
-__all__ = ["scripting_with_instances", "dump_torchscript_IR"]
 
-
-def scripting_with_instances(model, fields):
+def export_torchscript_with_instances(model, fields):
     """
     Run :func:`torch.jit.script` on a model that uses the :class:`Instances` class. Since
     attributes of :class:`Instances` are "dynamically" added in eager mode，it is difficult
-    for scripting to support it out of the box. This function is made to support scripting
+    for torchscript to support it out of the box. This function is made to support scripting
     a model that uses :class:`Instances`. It does the following:
 
     1. Create a scriptable ``new_Instances`` class which behaves similarly to ``Instances``,
        but with all attributes been "static".
        The attributes need to be statically declared in the ``fields`` argument.
-    2. Register ``new_Instances``, and force scripting compiler to
+    2. Register ``new_Instances`` to torchscript, and force torchscript to
        use it when trying to compile ``Instances``.
 
     After this function, the process will be reverted. User should be able to script another model
@@ -31,22 +29,23 @@ def scripting_with_instances(model, fields):
         Assume that ``Instances`` in the model consist of two attributes named
         ``proposal_boxes`` and ``objectness_logits`` with type :class:`Boxes` and
         :class:`Tensor` respectively during inference. You can call this function like:
+
         ::
             fields = {"proposal_boxes": Boxes, "objectness_logits": torch.Tensor}
-            torchscipt_model =  scripting_with_instances(model, fields)
+            torchscipt_model =  export_torchscript_with_instances(model, fields)
 
     Note:
-        It only support models in evaluation mode.
+        Currently we only support models in evaluation mode.
 
     Args:
-        model (nn.Module): The input model to be exported by scripting.
+        model (nn.Module): The input model to be exported to torchscript.
         fields (Dict[str, type]): Attribute names and corresponding type that
             ``Instances`` will use in the model. Note that all attributes used in ``Instances``
             need to be added, regardless of whether they are inputs/outputs of the model.
             Data type not defined in detectron2 is not supported for now.
 
     Returns:
-        torch.jit.ScriptModule: the model in torchscript format
+        torch.jit.ScriptModule: the input model in torchscript format
     """
     assert TORCH_VERSION >= (1, 8), "This feature is not available in PyTorch < 1.8"
     assert (
@@ -58,17 +57,13 @@ def scripting_with_instances(model, fields):
         return scripted_model
 
 
-# alias for old name
-export_torchscript_with_instances = scripting_with_instances
-
-
 def dump_torchscript_IR(model, dir):
     """
-    Dump IR of a TracedModule/ScriptModule/Function in various format (code, graph,
-    inlined graph). Useful for debugging.
+    Dump IR of a TracedModule/ScriptModule at various levels.
+    Useful for debugging.
 
     Args:
-        model (TracedModule/ScriptModule/ScriptFUnction): traced or scripted module
+        model (TracedModule or ScriptModule): traced or scripted module
         dir (str): output directory to dump files.
     """
     PathManager.mkdirs(dir)
@@ -108,26 +103,19 @@ def dump_torchscript_IR(model, dir):
             for name, m in mod.named_children():
                 dump_code(prefix + "." + name, m)
 
-        if isinstance(model, torch.jit.ScriptFunction):
-            f.write(get_code(model))
-        else:
-            dump_code("", model)
+        dump_code("", model)
 
-    def _get_graph(model):
-        try:
-            # Recursively dump IR of all modules
-            return _get_script_mod(model)._c.dump_to_str(True, False, False)
-        except AttributeError:
-            return model.graph.str()
-
+    # Recursively dump IR of all modules
     with PathManager.open(os.path.join(dir, "model_ts_IR.txt"), "w") as f:
-        f.write(_get_graph(model))
+        try:
+            f.write(_get_script_mod(model)._c.dump_to_str(True, False, False))
+        except AttributeError:
+            pass
 
     # Dump IR of the entire graph (all submodules inlined)
     with PathManager.open(os.path.join(dir, "model_ts_IR_inlined.txt"), "w") as f:
         f.write(str(model.inlined_graph))
 
-    if not isinstance(model, torch.jit.ScriptFunction):
-        # Dump the model structure in pytorch style
-        with PathManager.open(os.path.join(dir, "model.txt"), "w") as f:
-            f.write(str(model))
+    # Dump the model structure in pytorch style
+    with PathManager.open(os.path.join(dir, "model.txt"), "w") as f:
+        f.write(str(model))

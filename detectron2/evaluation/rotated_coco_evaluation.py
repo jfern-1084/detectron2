@@ -145,7 +145,7 @@ class RotatedCOCOEvaluator(COCOEvaluator):
             results.append(result)
         return results
 
-    def _eval_predictions(self, predictions, img_ids=None):  # img_ids: unused
+    def _eval_predictions(self, predictions):
         """
         Evaluate predictions on the given tasks.
         Fill self._results with the metrics of the tasks.
@@ -174,7 +174,7 @@ class RotatedCOCOEvaluator(COCOEvaluator):
 
         self._logger.info("Evaluating predictions ...")
 
-        assert self._tasks is None or set(self._tasks) == {
+        assert self._task is None or set(self._task) == {
             "bbox"
         }, "[RotatedCOCOEvaluator] Only bbox evaluation is supported"
         coco_eval = (

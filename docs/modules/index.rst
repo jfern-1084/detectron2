@@ -16,4 +16,3 @@ API Documentation
     structures
     utils
     export
-    fvcore

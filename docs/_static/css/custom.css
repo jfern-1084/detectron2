@@ -20,11 +20,6 @@
   margin-bottom: 0px;
 }
 
-.rst-content .line-block {
-  /* otherwise will be 24px */
-  margin-bottom: 0px;
-}
-
 div.section > details {
   padding-bottom: 1em;
 }

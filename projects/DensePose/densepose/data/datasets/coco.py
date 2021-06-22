@@ -15,11 +15,8 @@ from detectron2.utils.file_io import PathManager
 from ..utils import maybe_prepend_base_path
 
 DENSEPOSE_MASK_KEY = "dp_masks"
-DENSEPOSE_IUV_KEYS_WITHOUT_MASK = ["dp_x", "dp_y", "dp_I", "dp_U", "dp_V"]
-DENSEPOSE_CSE_KEYS_WITHOUT_MASK = ["dp_x", "dp_y", "dp_vertex", "ref_model"]
-DENSEPOSE_ALL_POSSIBLE_KEYS = set(
-    DENSEPOSE_IUV_KEYS_WITHOUT_MASK + DENSEPOSE_CSE_KEYS_WITHOUT_MASK + [DENSEPOSE_MASK_KEY]
-)
+DENSEPOSE_KEYS_WITHOUT_MASK = ["dp_x", "dp_y", "dp_I", "dp_U", "dp_V"]
+DENSEPOSE_KEYS = DENSEPOSE_KEYS_WITHOUT_MASK + [DENSEPOSE_MASK_KEY]
 DENSEPOSE_METADATA_URL_PREFIX = "https://dl.fbaipublicfiles.com/densepose/data/"
 
 
@@ -73,18 +70,8 @@ DATASETS = [
     ),
     CocoDatasetInfo(
         name="densepose_chimps",
-        images_root="densepose_chimps/images",
-        annotations_fpath="densepose_chimps/densepose_chimps_densepose.json",
-    ),
-    CocoDatasetInfo(
-        name="densepose_chimps_cse_train",
-        images_root="densepose_chimps/images",
-        annotations_fpath="densepose_chimps/densepose_chimps_cse_train.json",
-    ),
-    CocoDatasetInfo(
-        name="densepose_chimps_cse_val",
-        images_root="densepose_chimps/images",
-        annotations_fpath="densepose_chimps/densepose_chimps_cse_val.json",
+        images_root="densepose_evolution/densepose_chimps",
+        annotations_fpath="densepose_evolution/annotations/densepose_chimps_densepose.json",
     ),
     CocoDatasetInfo(
         name="posetrack2017_train",
@@ -128,12 +115,12 @@ BASE_DATASETS = [
 ]
 
 
-def get_metadata(base_path: Optional[str]) -> Dict[str, Any]:
+def get_metadata(base_path: Optional[os.PathLike]) -> Dict[str, Any]:
     """
     Returns metadata associated with COCO DensePose datasets
 
     Args:
-    base_path: Optional[str]
+    base_path: Optional[os.PathLike]
         Base path used to load metadata from
 
     Returns:
@@ -144,8 +131,7 @@ def get_metadata(base_path: Optional[str]) -> Dict[str, Any]:
         "densepose_transform_src": maybe_prepend_base_path(base_path, "UV_symmetry_transforms.mat"),
         "densepose_smpl_subdiv": maybe_prepend_base_path(base_path, "SMPL_subdiv.mat"),
         "densepose_smpl_subdiv_transform": maybe_prepend_base_path(
-            base_path,
-            "SMPL_SUBDIV_TRANSFORM.mat",
+            base_path, "SMPL_SUBDIV_TRANSFORM.mat"
         ),
     }
     return meta
@@ -173,11 +159,11 @@ def _load_coco_annotations(json_file: str):
     return coco_api
 
 
-def _add_categories_metadata(dataset_name: str, categories: List[Dict[str, Any]]):
+def _add_categories_metadata(dataset_name: str, categories: Dict[str, Any]):
     meta = MetadataCatalog.get(dataset_name)
     meta.categories = {c["id"]: c["name"] for c in categories}
     logger = logging.getLogger(__name__)
-    logger.info("Dataset {} categories: {}".format(dataset_name, meta.categories))
+    logger.info("Dataset {} categories: {}".format(dataset_name, categories))
 
 
 def _verify_annotations_have_unique_ids(json_file: str, anns: List[List[Dict[str, Any]]]):
@@ -226,7 +212,7 @@ def _maybe_add_keypoints(obj: Dict[str, Any], ann_dict: Dict[str, Any]):
 
 
 def _maybe_add_densepose(obj: Dict[str, Any], ann_dict: Dict[str, Any]):
-    for key in DENSEPOSE_ALL_POSSIBLE_KEYS:
+    for key in DENSEPOSE_KEYS:
         if key in ann_dict:
             obj[key] = ann_dict[key]
 
@@ -268,70 +254,6 @@ def _combine_images_with_annotations(
     if contains_video_frame_info:
         create_video_frame_mapping(dataset_name, dataset_dicts)
     return dataset_dicts
-
-
-def get_contiguous_id_to_category_id_map(metadata):
-    cat_id_2_cont_id = metadata.thing_dataset_id_to_contiguous_id
-    cont_id_2_cat_id = {}
-    for cat_id, cont_id in cat_id_2_cont_id.items():
-        if cont_id in cont_id_2_cat_id:
-            continue
-        cont_id_2_cat_id[cont_id] = cat_id
-    return cont_id_2_cat_id
-
-
-def maybe_filter_categories_cocoapi(dataset_name, coco_api):
-    meta = MetadataCatalog.get(dataset_name)
-    cont_id_2_cat_id = get_contiguous_id_to_category_id_map(meta)
-    cat_id_2_cont_id = meta.thing_dataset_id_to_contiguous_id
-    # filter categories
-    cats = []
-    for cat in coco_api.dataset["categories"]:
-        cat_id = cat["id"]
-        if cat_id not in cat_id_2_cont_id:
-            continue
-        cont_id = cat_id_2_cont_id[cat_id]
-        if (cont_id in cont_id_2_cat_id) and (cont_id_2_cat_id[cont_id] == cat_id):
-            cats.append(cat)
-    coco_api.dataset["categories"] = cats
-    # filter annotations, if multiple categories are mapped to a single
-    # contiguous ID, use only one category ID and map all annotations to that category ID
-    anns = []
-    for ann in coco_api.dataset["annotations"]:
-        cat_id = ann["category_id"]
-        if cat_id not in cat_id_2_cont_id:
-            continue
-        cont_id = cat_id_2_cont_id[cat_id]
-        ann["category_id"] = cont_id_2_cat_id[cont_id]
-        anns.append(ann)
-    coco_api.dataset["annotations"] = anns
-    # recreate index
-    coco_api.createIndex()
-
-
-def maybe_filter_and_map_categories_cocoapi(dataset_name, coco_api):
-    meta = MetadataCatalog.get(dataset_name)
-    category_id_map = meta.thing_dataset_id_to_contiguous_id
-    # map categories
-    cats = []
-    for cat in coco_api.dataset["categories"]:
-        cat_id = cat["id"]
-        if cat_id not in category_id_map:
-            continue
-        cat["id"] = category_id_map[cat_id]
-        cats.append(cat)
-    coco_api.dataset["categories"] = cats
-    # map annotation categories
-    anns = []
-    for ann in coco_api.dataset["annotations"]:
-        cat_id = ann["category_id"]
-        if cat_id not in category_id_map:
-            continue
-        ann["category_id"] = category_id_map[cat_id]
-        anns.append(ann)
-    coco_api.dataset["annotations"] = anns
-    # recreate index
-    coco_api.createIndex()
 
 
 def create_video_frame_mapping(dataset_name, dataset_dicts):
@@ -388,14 +310,14 @@ def load_coco_json(annotations_json_file: str, image_root: str, dataset_name: st
     return dataset_records
 
 
-def register_dataset(dataset_data: CocoDatasetInfo, datasets_root: Optional[str] = None):
+def register_dataset(dataset_data: CocoDatasetInfo, datasets_root: Optional[os.PathLike] = None):
     """
     Registers provided COCO DensePose dataset
 
     Args:
     dataset_data: CocoDatasetInfo
         Dataset data
-    datasets_root: Optional[str]
+    datasets_root: Optional[os.PathLike]
         Datasets root folder (default: None)
     """
     annotations_fpath = maybe_prepend_base_path(datasets_root, dataset_data.annotations_fpath)
@@ -417,7 +339,7 @@ def register_dataset(dataset_data: CocoDatasetInfo, datasets_root: Optional[str]
 
 
 def register_datasets(
-    datasets_data: Iterable[CocoDatasetInfo], datasets_root: Optional[str] = None
+    datasets_data: Iterable[CocoDatasetInfo], datasets_root: Optional[os.PathLike] = None
 ):
     """
     Registers provided COCO DensePose datasets
@@ -425,7 +347,7 @@ def register_datasets(
     Args:
     datasets_data: Iterable[CocoDatasetInfo]
         An iterable of dataset datas
-    datasets_root: Optional[str]
+    datasets_root: Optional[os.PathLike]
         Datasets root folder (default: None)
     """
     for dataset_data in datasets_data:

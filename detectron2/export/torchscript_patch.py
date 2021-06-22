@@ -1,5 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 
+import importlib.util
 import os
 import sys
 import tempfile
@@ -11,8 +12,7 @@ from torch import nn
 
 # need some explicit imports due to https://github.com/pytorch/pytorch/issues/38964
 import detectron2  # noqa F401
-from detectron2.structures import Boxes, Instances
-from detectron2.utils.env import _import_file
+from detectron2.structures import Instances
 
 _counter = 0
 
@@ -27,9 +27,21 @@ def _clear_jit_cache():
 
 def _add_instances_conversion_methods(newInstances):
     """
-    Add from_instances methods to the scripted Instances class.
+    Add to_instances/from_instances methods to the scripted Instances class.
     """
     cls_name = newInstances.__name__
+
+    @torch.jit.unused
+    def to_instances(self):
+        """
+        Convert scripted Instances to original Instances
+        """
+        ret = Instances(self.image_size)
+        for name in self._field_names:
+            val = getattr(self, "_" + name, None)
+            if val is not None:
+                ret.set(name, val)
+        return ret
 
     @torch.jit.unused
     def from_instances(instances: Instances):
@@ -44,6 +56,7 @@ def _add_instances_conversion_methods(newInstances):
             setattr(ret, name, deepcopy(val))
         return ret
 
+    newInstances.to_instances = to_instances
     newInstances.from_instances = from_instances
 
 
@@ -52,7 +65,7 @@ def patch_instances(fields):
     """
     A contextmanager, under which the Instances class in detectron2 is replaced
     by a statically-typed scriptable class, defined by `fields`.
-    See more in `scripting_with_instances`.
+    See more in `export_torchscript_with_instances`.
     """
 
     with tempfile.TemporaryDirectory(prefix="detectron2") as dir, tempfile.NamedTemporaryFile(
@@ -186,6 +199,7 @@ class {cls_name}:
     # support method `to`
     lines.append(
         f"""
+    @torch.jit.unused  # https://github.com/pytorch/pytorch/issues/47570
     def to(self, device: torch.device) -> "{cls_name}":
         ret = {cls_name}(self.image_size)
 """
@@ -229,32 +243,6 @@ class {cls_name}:
         return ret
 """
     )
-
-    # support method `get_fields()`
-    lines.append(
-        """
-    def get_fields(self) -> Dict[str, Tensor]:
-        ret = {}
-    """
-    )
-    for f in fields:
-        if f.type_ == Boxes:
-            stmt = "t.tensor"
-        elif f.type_ == torch.Tensor:
-            stmt = "t"
-        else:
-            stmt = f'assert False, "unsupported type {str(f.type_)}"'
-        lines.append(
-            f"""
-        t = self._{f.name}
-        if t is not None:
-            ret["{f.name}"] = {stmt}
-        """
-        )
-    lines.append(
-        """
-        return ret"""
-    )
     return cls_name, os.linesep.join(lines)
 
 
@@ -278,11 +266,17 @@ from detectron2.structures import Boxes, Instances
 
 
 def _import(path):
-    return _import_file(
-        "{}{}".format(sys.modules[__name__].__name__, _counter), path, make_importable=True
+    # https://docs.python.org/3/library/importlib.html#importing-a-source-file-directly
+    spec = importlib.util.spec_from_file_location(
+        "{}{}".format(sys.modules[__name__].__name__, _counter), path
     )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module.__name__] = module
+    spec.loader.exec_module(module)
+    return module
 
 
+# TODO: this is a private utility. Should be made more useful through a model export api.
 @contextmanager
 def patch_builtin_len(modules=()):
     """
@@ -302,7 +296,6 @@ def patch_builtin_len(modules=()):
         MODULES = [
             "detectron2.modeling.roi_heads.fast_rcnn",
             "detectron2.modeling.roi_heads.mask_head",
-            "detectron2.modeling.roi_heads.keypoint_head",
         ] + list(modules)
         ctxs = [stack.enter_context(mock.patch(mod + ".len")) for mod in MODULES]
         for m in ctxs:
@@ -349,8 +342,6 @@ def patch_nonscriptable_classes():
     from detectron2.modeling.roi_heads import StandardROIHeads
 
     if hasattr(StandardROIHeads, "__annotations__"):
-        # copy first to avoid editing annotations of base class
-        StandardROIHeads.__annotations__ = deepcopy(StandardROIHeads.__annotations__)
         StandardROIHeads.__annotations__["mask_on"] = torch.jit.Final[bool]
         StandardROIHeads.__annotations__["keypoint_on"] = torch.jit.Final[bool]
 

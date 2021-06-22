@@ -1,4 +1,4 @@
-detectron2.layers 
+detectron2.layers package
 =========================
 
 .. automodule:: detectron2.layers

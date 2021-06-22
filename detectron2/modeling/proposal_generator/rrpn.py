@@ -4,7 +4,6 @@ import logging
 from typing import Dict, List
 import torch
 
-from detectron2.config import configurable
 from detectron2.layers import ShapeSpec, batched_nms_rotated, cat
 from detectron2.structures import Instances, RotatedBoxes, pairwise_iou_rotated
 from detectron2.utils.memory import retry_if_cuda_oom
@@ -127,19 +126,13 @@ class RRPN(RPN):
     Rotated Region Proposal Network described in :paper:`RRPN`.
     """
 
-    @configurable
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, cfg, input_shape: Dict[str, ShapeSpec]):
+        box2box_transform = Box2BoxTransformRotated(weights=cfg.MODEL.RPN.BBOX_REG_WEIGHTS)
+        super().__init__(cfg, input_shape, box2box_transform=box2box_transform)
         if self.anchor_boundary_thresh >= 0:
             raise NotImplementedError(
                 "anchor_boundary_thresh is a legacy option not implemented for RRPN."
             )
-
-    @classmethod
-    def from_config(cls, cfg, input_shape: Dict[str, ShapeSpec]):
-        ret = super().from_config(cfg, input_shape)
-        ret["box2box_transform"] = Box2BoxTransformRotated(weights=cfg.MODEL.RPN.BBOX_REG_WEIGHTS)
-        return ret
 
     @torch.no_grad()
     def label_and_sample_anchors(self, anchors: List[RotatedBoxes], gt_instances: List[Instances]):

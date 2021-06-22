@@ -14,7 +14,7 @@ class RetinaNetTest(unittest.TestCase):
 
     def test_flop(self):
         # RetinaNet supports flop-counting with random inputs
-        inputs = [{"image": torch.rand(3, 800, 800), "test_unused": "abcd"}]
+        inputs = [{"image": torch.rand(3, 800, 800)}]
         res = flop_count_operators(self.model, inputs)
         self.assertTrue(int(res["conv"]), 146)  # 146B flops
 

@@ -1,12 +1,15 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # -*- coding: utf-8 -*-
 
+import logging
 import typing
-import fvcore
+import torch
 from fvcore.nn import activation_count, flop_count, parameter_count, parameter_count_table
 from torch import nn
 
-from detectron2.export import TracingAdapter
+from detectron2.structures import BitMasks, Boxes, ImageList, Instances
+
+from .logger import log_first_n
 
 __all__ = [
     "activation_count_operators",
@@ -19,12 +22,10 @@ FLOPS_MODE = "flops"
 ACTIVATIONS_MODE = "activations"
 
 
-# Some extra ops to ignore from counting, including elementwise and reduction ops
+# some extra ops to ignore from counting.
 _IGNORED_OPS = {
     "aten::add",
     "aten::add_",
-    "aten::argmax",
-    "aten::argsort",
     "aten::batch_norm",
     "aten::constant_pad_nd",
     "aten::div",
@@ -35,9 +36,7 @@ _IGNORED_OPS = {
     "aten::meshgrid",
     "aten::mul",
     "aten::mul_",
-    "aten::neg",
     "aten::nonzero_numpy",
-    "aten::reciprocal",
     "aten::rsub",
     "aten::sigmoid",
     "aten::sigmoid_",
@@ -45,42 +44,24 @@ _IGNORED_OPS = {
     "aten::sort",
     "aten::sqrt",
     "aten::sub",
-<<<<<<< HEAD
     "aten::upsample_nearest2d",
     "prim::PythonOp",
 <<<<<<< HEAD
     "torchvision::caffe_nms",
 ]
 =======
-=======
->>>>>>> 3a754ed197e0b5987325db3cdd1cb0d1ae775d0e
     "torchvision::nms",  # TODO estimate flop for nms
 }
 >>>>>>> cd60faf1427f95d357ba30365a415d0309a8618f
 
 
-class FlopCountAnalysis(fvcore.nn.FlopCountAnalysis):
-    """
-    Same as :class:`fvcore.nn.FlopCountAnalysis`, but supports detectron2 models.
-    """
-
-    def __init__(self, model, inputs):
-        """
-        Args:
-            model (nn.Module):
-            inputs (Any): inputs of the given model. Does not have to be tuple of tensors.
-        """
-        wrapper = TracingAdapter(model, inputs, allow_non_tensor=True)
-        super().__init__(wrapper, wrapper.flattened_inputs)
-        self.set_op_handle(**{k: None for k in _IGNORED_OPS})
-
-
-def flop_count_operators(model: nn.Module, inputs: list) -> typing.DefaultDict[str, float]:
+def flop_count_operators(
+    model: nn.Module, inputs: list, **kwargs
+) -> typing.DefaultDict[str, float]:
     """
     Implement operator-level flops counting using jit.
-    This is a wrapper of :func:`fvcore.nn.flop_count` and adds supports for standard
-    detection models in detectron2.
-    Please use :class:`FlopCountAnalysis` for more advanced functionalities.
+    This is a wrapper of fvcore.nn.flop_count, that supports standard detection models
+    in detectron2.
 
     Note:
         The function runs the input through the model to compute flops.
@@ -88,23 +69,13 @@ def flop_count_operators(model: nn.Module, inputs: list) -> typing.DefaultDict[s
         the flops of box & mask head depends on the number of proposals &
         the number of detected objects.
         Therefore, the flops counting using a single input may not accurately
-        reflect the computation cost of a model. It's recommended to average
-        across a number of inputs.
+        reflect the computation cost of a model.
 
     Args:
         model: a detectron2 model that takes `list[dict]` as input.
         inputs (list[dict]): inputs to model, in detectron2's standard format.
-            Only "image" key will be used.
-        supported_ops (dict[str, Handle]): see documentation of :func:`fvcore.nn.flop_count`
-
-    Returns:
-        Counter: Gflop count per operator
     """
-    old_train = model.training
-    model.eval()
-    ret = FlopCountAnalysis(model, inputs).by_operator()
-    model.train(old_train)
-    return {k: v / 1e9 for k, v in ret.items()}
+    return _wrapper_count_operators(model=model, inputs=inputs, mode=FLOPS_MODE, **kwargs)
 
 
 def activation_count_operators(
@@ -124,17 +95,37 @@ def activation_count_operators(
     Args:
         model: a detectron2 model that takes `list[dict]` as input.
         inputs (list[dict]): inputs to model, in detectron2's standard format.
-            Only "image" key will be used.
-
-    Returns:
-        Counter: activation count per operator
     """
     return _wrapper_count_operators(model=model, inputs=inputs, mode=ACTIVATIONS_MODE, **kwargs)
+
+
+def _flatten_to_tuple(outputs):
+    result = []
+    if isinstance(outputs, torch.Tensor):
+        result.append(outputs)
+    elif isinstance(outputs, (list, tuple)):
+        for v in outputs:
+            result.extend(_flatten_to_tuple(v))
+    elif isinstance(outputs, dict):
+        for _, v in outputs.items():
+            result.extend(_flatten_to_tuple(v))
+    elif isinstance(outputs, Instances):
+        result.extend(_flatten_to_tuple(outputs.get_fields()))
+    elif isinstance(outputs, (Boxes, BitMasks, ImageList)):
+        result.append(outputs.tensor)
+    else:
+        log_first_n(
+            logging.WARN,
+            f"Output of type {type(outputs)} not included in flops/activations count.",
+            n=10,
+        )
+    return tuple(result)
 
 
 def _wrapper_count_operators(
     model: nn.Module, inputs: list, mode: str, **kwargs
 ) -> typing.DefaultDict[str, float]:
+
     # ignore some ops
     supported_ops = {k: lambda *args, **kwargs: {} for k in _IGNORED_OPS}
     supported_ops.update(kwargs.pop("supported_ops", {}))
@@ -142,19 +133,33 @@ def _wrapper_count_operators(
 
     assert len(inputs) == 1, "Please use batch size=1"
     tensor_input = inputs[0]["image"]
-    inputs = [{"image": tensor_input}]  # remove other keys, in case there are any
+
+    class WrapModel(nn.Module):
+        def __init__(self, model):
+            super().__init__()
+            if isinstance(
+                model, (nn.parallel.distributed.DistributedDataParallel, nn.DataParallel)
+            ):
+                self.model = model.module
+            else:
+                self.model = model
+
+        def forward(self, image):
+            # jit requires the input/output to be Tensors
+            inputs = [{"image": image}]
+            outputs = self.model.forward(inputs)
+            # Only the subgraph that computes the returned tuple of tensor will be
+            # counted. So we flatten everything we found to tuple of tensors.
+            return _flatten_to_tuple(outputs)
 
     old_train = model.training
-    if isinstance(model, (nn.parallel.distributed.DistributedDataParallel, nn.DataParallel)):
-        model = model.module
-    wrapper = TracingAdapter(model, inputs)
-    wrapper.eval()
-    if mode == FLOPS_MODE:
-        ret = flop_count(wrapper, (tensor_input,), **kwargs)
-    elif mode == ACTIVATIONS_MODE:
-        ret = activation_count(wrapper, (tensor_input,), **kwargs)
-    else:
-        raise NotImplementedError("Count for mode {} is not supported yet.".format(mode))
+    with torch.no_grad():
+        if mode == FLOPS_MODE:
+            ret = flop_count(WrapModel(model).train(False), (tensor_input,), **kwargs)
+        elif mode == ACTIVATIONS_MODE:
+            ret = activation_count(WrapModel(model).train(False), (tensor_input,), **kwargs)
+        else:
+            raise NotImplementedError("Count for mode {} is not supported yet.".format(mode))
     # compatible with change in fvcore
     if isinstance(ret, tuple):
         ret = ret[0]

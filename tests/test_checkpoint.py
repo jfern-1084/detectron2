@@ -36,13 +36,12 @@ class TestCheckpointer(unittest.TestCase):
                 model = nn.DataParallel(model)
             model_sd = model.state_dict()
 
-            sd_to_load = align_and_update_state_dicts(model_sd, state_dict)
-            model.load_state_dict(sd_to_load)
+            align_and_update_state_dicts(model_sd, state_dict)
             for loaded, stored in zip(model_sd.values(), state_dict.values()):
                 # different tensor references
                 self.assertFalse(id(loaded) == id(stored))
                 # same content
-                self.assertTrue(loaded.to(stored).equal(stored))
+                self.assertTrue(loaded.equal(stored))
 
 
 if __name__ == "__main__":

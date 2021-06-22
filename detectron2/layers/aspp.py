@@ -7,7 +7,6 @@ from torch import nn
 from torch.nn import functional as F
 
 from .batch_norm import get_norm
-from .blocks import DepthwiseSeparableConv2d
 from .wrappers import Conv2d
 
 
@@ -26,7 +25,6 @@ class ASPP(nn.Module):
         activation,
         pool_kernel_size=None,
         dropout: float = 0.0,
-        use_depthwise_separable_conv=False,
     ):
         """
         Args:
@@ -49,8 +47,6 @@ class ASPP(nn.Module):
             dropout (float): apply dropout on the output of ASPP. It is used in
                 the official DeepLab implementation with a rate of 0.1:
                 https://github.com/tensorflow/models/blob/21b73d22f3ed05b650e85ac50849408dd36de32e/research/deeplab/model.py#L532  # noqa
-            use_depthwise_separable_conv (bool): use DepthwiseSeparableConv2d
-                for 3x3 convs in ASPP, proposed in :paper:`DeepLabV3+`.
         """
         super(ASPP, self).__init__()
         assert len(dilations) == 3, "ASPP expects 3 dilations, got {}".format(len(dilations))
@@ -72,34 +68,19 @@ class ASPP(nn.Module):
         weight_init.c2_xavier_fill(self.convs[-1])
         # atrous convs
         for dilation in dilations:
-            if use_depthwise_separable_conv:
-                self.convs.append(
-                    DepthwiseSeparableConv2d(
-                        in_channels,
-                        out_channels,
-                        kernel_size=3,
-                        padding=dilation,
-                        dilation=dilation,
-                        norm1=norm,
-                        activation1=deepcopy(activation),
-                        norm2=norm,
-                        activation2=deepcopy(activation),
-                    )
+            self.convs.append(
+                Conv2d(
+                    in_channels,
+                    out_channels,
+                    kernel_size=3,
+                    padding=dilation,
+                    dilation=dilation,
+                    bias=use_bias,
+                    norm=get_norm(norm, out_channels),
+                    activation=deepcopy(activation),
                 )
-            else:
-                self.convs.append(
-                    Conv2d(
-                        in_channels,
-                        out_channels,
-                        kernel_size=3,
-                        padding=dilation,
-                        dilation=dilation,
-                        bias=use_bias,
-                        norm=get_norm(norm, out_channels),
-                        activation=deepcopy(activation),
-                    )
-                )
-                weight_init.c2_xavier_fill(self.convs[-1])
+            )
+            weight_init.c2_xavier_fill(self.convs[-1])
         # image pooling
         # We do not add BatchNorm because the spatial resolution is 1x1,
         # the original TF implementation has BatchNorm.

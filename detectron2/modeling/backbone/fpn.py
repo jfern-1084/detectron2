@@ -1,7 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import math
 import fvcore.nn.weight_init as weight_init
-import torch
 import torch.nn.functional as F
 from torch import nn
 
@@ -19,8 +18,6 @@ class FPN(Backbone):
     This module implements :paper:`FPN`.
     It creates pyramid features built on top of some input feature maps.
     """
-
-    _fuse_type: torch.jit.Final[str]
 
     def __init__(
         self, bottom_up, in_features, out_channels, norm="", top_block=None, fuse_type="sum"
@@ -91,7 +88,7 @@ class FPN(Backbone):
         self.lateral_convs = lateral_convs[::-1]
         self.output_convs = output_convs[::-1]
         self.top_block = top_block
-        self.in_features = tuple(in_features)
+        self.in_features = in_features
         self.bottom_up = bottom_up
         # Return feature names are "p<stage>", like ["p2", "p3", ..., "p6"]
         self._out_feature_strides = {"p{}".format(int(math.log2(s))): s for s in strides}
@@ -105,6 +102,10 @@ class FPN(Backbone):
         self._size_divisibility = strides[-1]
         assert fuse_type in {"avg", "sum"}
         self._fuse_type = fuse_type
+
+        # Scripting does not support this: https://github.com/pytorch/pytorch/issues/47334
+        # have to do it in __init__ instead.
+        self.rev_in_features = tuple(in_features[::-1])
 
     @property
     def size_divisibility(self):
@@ -129,20 +130,17 @@ class FPN(Backbone):
         results.append(self.output_convs[0](prev_features))
 
         # Reverse feature maps into top-down order (from low to high resolution)
-        for idx, (lateral_conv, output_conv) in enumerate(
-            zip(self.lateral_convs, self.output_convs)
+        for features, lateral_conv, output_conv in zip(
+            self.rev_in_features[1:], self.lateral_convs[1:], self.output_convs[1:]
         ):
-            # Slicing of ModuleList is not supported https://github.com/pytorch/pytorch/issues/47336
-            # Therefore we loop over all modules but skip the first one
-            if idx > 0:
-                features = self.in_features[-idx - 1]
-                features = bottom_up_features[features]
-                top_down_features = F.interpolate(prev_features, scale_factor=2.0, mode="nearest")
-                lateral_features = lateral_conv(features)
-                prev_features = lateral_features + top_down_features
-                if self._fuse_type == "avg":
-                    prev_features /= 2
-                results.insert(0, output_conv(prev_features))
+            features = bottom_up_features[features]
+            top_down_features = F.interpolate(prev_features, scale_factor=2.0, mode="nearest")
+            # Has to use explicit forward due to https://github.com/pytorch/pytorch/issues/47336
+            lateral_features = lateral_conv.forward(features)
+            prev_features = lateral_features + top_down_features
+            if self._fuse_type == "avg":
+                prev_features /= 2
+            results.insert(0, output_conv.forward(prev_features))
 
         if self.top_block is not None:
             if self.top_block.in_feature in bottom_up_features:
@@ -151,7 +149,7 @@ class FPN(Backbone):
                 top_block_in_feature = results[self._out_features.index(self.top_block.in_feature)]
             results.extend(self.top_block(top_block_in_feature))
         assert len(self._out_features) == len(results)
-        return {f: res for f, res in zip(self._out_features, results)}
+        return dict(list(zip(self._out_features, results)))
 
     def output_shape(self):
         return {

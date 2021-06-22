@@ -1,4 +1,4 @@
-detectron2.structures 
+detectron2.structures package
 =============================
 
 .. automodule:: detectron2.structures

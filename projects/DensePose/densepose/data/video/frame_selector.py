@@ -27,7 +27,7 @@ class FrameSelectionStrategy(Enum):
     # fmt: on
 
 
-class RandomKFramesSelector(Callable):  # pyre-ignore[39]
+class RandomKFramesSelector(Callable):
     """
     Selector that retains at most `k` random frames
     """
@@ -47,7 +47,7 @@ class RandomKFramesSelector(Callable):  # pyre-ignore[39]
         return random.sample(frame_tss, min(self.k, len(frame_tss)))
 
 
-class FirstKFramesSelector(Callable):  # pyre-ignore[39]
+class FirstKFramesSelector(Callable):
     """
     Selector that retains at most `k` first frames
     """
@@ -67,7 +67,7 @@ class FirstKFramesSelector(Callable):  # pyre-ignore[39]
         return frame_tss[: self.k]
 
 
-class LastKFramesSelector(Callable):  # pyre-ignore[39]
+class LastKFramesSelector(Callable):
     """
     Selector that retains at most `k` last frames from video data
     """

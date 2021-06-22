@@ -3,8 +3,7 @@ import numpy as np
 from typing import Iterable, Optional, Tuple
 import cv2
 
-from densepose.structures import DensePoseDataRelative
-
+from ..data.structures import DensePoseDataRelative
 from .base import Boxes, Image, MatrixVisualizer, PointsVisualizer
 
 
@@ -13,7 +12,7 @@ class DensePoseDataCoarseSegmentationVisualizer(object):
     Visualizer for ground truth segmentation
     """
 
-    def __init__(self, inplace=True, cmap=cv2.COLORMAP_PARULA, alpha=0.7, **kwargs):
+    def __init__(self, inplace=True, cmap=cv2.COLORMAP_PARULA, alpha=0.7):
         self.mask_visualizer = MatrixVisualizer(
             inplace=inplace,
             cmap=cmap,
@@ -37,7 +36,7 @@ class DensePoseDataCoarseSegmentationVisualizer(object):
 
 
 class DensePoseDataPointsVisualizer(object):
-    def __init__(self, densepose_data_to_value_fn=None, cmap=cv2.COLORMAP_PARULA, **kwargs):
+    def __init__(self, densepose_data_to_value_fn=None, cmap=cv2.COLORMAP_PARULA):
         self.points_visualizer = PointsVisualizer()
         self.densepose_data_to_value_fn = densepose_data_to_value_fn
         self.cmap = cmap
@@ -86,21 +85,21 @@ def _densepose_data_i_for_cmap(densepose_data):
 
 
 class DensePoseDataPointsUVisualizer(DensePoseDataPointsVisualizer):
-    def __init__(self, **kwargs):
+    def __init__(self):
         super(DensePoseDataPointsUVisualizer, self).__init__(
-            densepose_data_to_value_fn=_densepose_data_u_for_cmap, **kwargs
+            densepose_data_to_value_fn=_densepose_data_u_for_cmap
         )
 
 
 class DensePoseDataPointsVVisualizer(DensePoseDataPointsVisualizer):
-    def __init__(self, **kwargs):
+    def __init__(self):
         super(DensePoseDataPointsVVisualizer, self).__init__(
-            densepose_data_to_value_fn=_densepose_data_v_for_cmap, **kwargs
+            densepose_data_to_value_fn=_densepose_data_v_for_cmap
         )
 
 
 class DensePoseDataPointsIVisualizer(DensePoseDataPointsVisualizer):
-    def __init__(self, **kwargs):
+    def __init__(self):
         super(DensePoseDataPointsIVisualizer, self).__init__(
-            densepose_data_to_value_fn=_densepose_data_i_for_cmap, **kwargs
+            densepose_data_to_value_fn=_densepose_data_i_for_cmap
         )
