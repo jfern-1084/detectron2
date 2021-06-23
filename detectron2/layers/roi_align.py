@@ -44,7 +44,7 @@ class ROIAlign(nn.Module):
 
         version = tuple(int(x) for x in __version__.split(".")[:2])
         # https://github.com/pytorch/vision/pull/2438
-        assert version >= (0, 7), "Require torchvision >= 0.7"
+        # assert version >= (0, 7), "Require torchvision >= 0.7"
 
     def forward(self, input, rois):
         """
